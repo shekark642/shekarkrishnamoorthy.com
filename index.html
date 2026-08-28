@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Shekar Krishnamoorthy — Home</title>
+<meta name="description" content="Home page for shekarkrishnamoorthy.com — personal site, team page, and homework log.">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="alternate icon" href="/favicon.ico">
+<link rel="prev" href="https://collector.shekarkrishnamoorthy.com/index.html">
+<link rel="next" href="https://shekarkrishnamoorthy.com/members/shekarkrishnamoorthy.html">
+<style>
+  :root {
+    --bg: #f8fafc;
+    --card: #ffffff;
+    --text: #0f172a;
+    --muted: #475569;
+    --accent: #0284c7;
+    --accent2: #db2777;
+    --border: #dbe3ee;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+  }
+  a { color: var(--accent); }
+
+  /* ---------- Banner ---------- */
+  header.banner {
+    background: linear-gradient(120deg, #0f172a, #1e293b 60%, #0f172a);
+    color: #f1f5f9;
+    padding: 2.5rem 1.5rem;
+  }
+  .banner-inner {
+    max-width: 1000px;
+    margin: 0 auto;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 1.5rem;
+  }
+  .welcome .eyebrow {
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+    font-size: 0.8rem;
+    color: #7dd3fc;
+    margin: 0 0 0.3rem;
+  }
+  .welcome h1 {
+    margin: 0 0 0.5rem;
+    font-size: clamp(1.8rem, 5vw, 2.6rem);
+  }
+  .welcome h1 .dot {
+    color: var(--accent2);
+  }
+  .welcome .subtitle {
+    margin: 0;
+    color: #cbd5e1;
+    max-width: 32rem;
+  }
+
+  .team-card {
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 14px;
+    padding: 1.1rem 1.3rem;
+    min-width: 220px;
+  }
+  .team-card h2 {
+    margin: 0 0 0.75rem;
+    font-size: 0.95rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #93c5fd;
+  }
+  .team-card ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+  }
+  .team-card li {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+  }
+  .member-name {
+    font-weight: 600;
+  }
+  .btn {
+    display: inline-block;
+    background: var(--accent);
+    color: #04121f;
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 0.85rem;
+    padding: 0.4rem 0.8rem;
+    border-radius: 8px;
+    white-space: nowrap;
+    transition: transform 0.15s ease, background 0.2s ease;
+  }
+  .btn:hover {
+    background: #7dd3fc;
+    transform: translateY(-1px);
+  }
+
+  /* ---------- Main content ---------- */
+  main {
+    max-width: 1000px;
+    margin: 0 auto;
+    padding: 2.5rem 1.5rem 4rem;
+  }
+
+  .picture-section {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 1.5rem;
+    display: flex;
+    justify-content: center;
+  }
+  .picture-section svg {
+    width: 100%;
+    max-width: 520px;
+    height: auto;
+  }
+
+  section.homework-section {
+    margin-top: 2.5rem;
+  }
+  section.homework-section h2 {
+    margin-bottom: 0.75rem;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  caption {
+    text-align: left;
+    color: var(--muted);
+    padding-bottom: 0.6rem;
+    font-size: 0.9rem;
+  }
+  th, td {
+    text-align: left;
+    padding: 0.85rem 1rem;
+    border-bottom: 1px solid var(--border);
+  }
+  thead th {
+    background: #eef2f7;
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--muted);
+  }
+  tbody tr:hover {
+    background: #f5f9fc;
+  }
+  tbody tr:last-child td {
+    border-bottom: none;
+  }
+
+  nav.page-nav {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-top: 2.5rem;
+  }
+  nav.page-nav a {
+    flex: 1;
+    text-align: center;
+    text-decoration: none;
+    color: var(--text);
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 0.75rem 1rem;
+    transition: background 0.2s ease;
+  }
+  nav.page-nav a:hover {
+    background: #eef2f7;
+  }
+
+  footer {
+    text-align: center;
+    color: var(--muted);
+    font-size: 0.85rem;
+    padding: 1.5rem;
+  }
+
+  @media (max-width: 560px) {
+    .banner-inner {
+      flex-direction: column;
+    }
+    .team-card {
+      align-self: stretch;
+    }
+  }
+</style>
+</head>
+<body>
+
+<header class="banner">
+  <div class="banner-inner">
+    <div class="welcome">
+      <p class="eyebrow">Welcome to</p>
+      <h1>Shekar Krishnamoorthy<span class="dot">.</span>com</h1>
+      <p class="subtitle">A small site running on a DigitalOcean droplet, served by Apache, and built one virtual host at a time.</p>
+    </div>
+
+    <aside class="team-card" aria-labelledby="team-heading">
+      <h2 id="team-heading">Team Members</h2>
+      <ul>
+        <li>
+          <span class="member-name">Shekar Krishnamoorthy</span>
+          <a class="btn" href="/members/shekarkrishnamoorthy.html">About Me</a>
+        </li>
+        <!-- Add one <li> per teammate, same pattern, each linking to /members/&lt;name&gt;.html -->
+      </ul>
+    </aside>
+  </div>
+</header>
+
+<main>
+  <!--
+    Picture placeholder: this inline illustration stands in for a real photo so
+    nothing 404s before you upload one. To swap in an actual picture, replace
+    the <svg>...</svg> block below with:
+      <img src="/images/profile.jpg" alt="Shekar Krishnamoorthy" style="max-width:520px;width:100%;border-radius:16px;">
+    and upload the image file to public_html/images/profile.jpg.
+  -->
+  <section class="picture-section" aria-label="Featured illustration">
+    <svg viewBox="0 0 520 300" role="img" aria-labelledby="illo-title">
+      <title id="illo-title">Illustration of a laptop connected to a cloud server</title>
+      <defs>
+        <linearGradient id="skyGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="#e0f2fe"/>
+          <stop offset="100%" stop-color="#fce7f3"/>
+        </linearGradient>
+      </defs>
+      <rect x="0" y="0" width="520" height="300" rx="16" fill="url(#skyGrad)"/>
+      <ellipse cx="120" cy="70" rx="55" ry="28" fill="#ffffff"/>
+      <ellipse cx="165" cy="60" rx="40" ry="24" fill="#ffffff"/>
+      <rect x="360" y="40" width="70" height="100" rx="10" fill="#0f172a"/>
+      <rect x="370" y="55" width="50" height="8" rx="4" fill="#38bdf8"/>
+      <rect x="370" y="70" width="50" height="8" rx="4" fill="#f472b6"/>
+      <rect x="370" y="85" width="30" height="8" rx="4" fill="#38bdf8"/>
+      <rect x="140" y="190" width="220" height="14" rx="7" fill="#0f172a" opacity="0.15"/>
+      <rect x="160" y="150" width="180" height="45" rx="6" fill="#0f172a"/>
+      <rect x="168" y="158" width="164" height="29" rx="3" fill="#38bdf8"/>
+      <path d="M160 195 h180 l10 14 h-200 z" fill="#1e293b"/>
+      <circle cx="255" cy="250" r="4" fill="#0284c7"/>
+      <circle cx="255" cy="235" r="4" fill="#db2777"/>
+    </svg>
+  </section>
+  <section class="homework-section" aria-labelledby="hw-heading">
+    <h2 id="hw-heading">Homework</h2>
+    <table>
+      <caption>Assignments completed for this site, with links and short descriptions.</caption>
+      <thead>
+        <tr>
+          <th scope="col">Assignment</th>
+          <th scope="col">Description</th>
+          <th scope="col">Link</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>HW1 &mdash; Personal Page &amp; Site Basics</td>
+          <td>Set up Apache virtual hosts, added a personal team page under /members/, a favicon, and robots.txt.</td>
+          <td><a href="/members/shekarkrishnamoorthy.html">View page</a></td>
+        </tr>
+        <tr>
+          <td>HW2 &mdash; TBD</td>
+          <td>Description goes here once assigned.</td>
+          <td><a href="#">Link</a></td>
+        </tr>
+        <tr>
+          <td>HW3 &mdash; TBD</td>
+          <td>Description goes here once assigned.</td>
+          <td><a href="#">Link</a></td>
+        </tr>
+        <!-- Add one <tr> per assignment, same three-column pattern -->
+      </tbody>
+    </table>
+  </section>
+
+  <nav class="page-nav" aria-label="Site tour">
+    <a href="https://collector.shekarkrishnamoorthy.com/index.html" rel="prev">&larr; Collector</a>
+    <a href="/members/shekarkrishnamoorthy.html" rel="next">Members &rarr;</a>
+  </nav>
+</main>
+
+<footer>
+  <p>&copy; 2026 Shekar Krishnamoorthy.</p>
+</footer>
+
+</body>
+</html>
+
