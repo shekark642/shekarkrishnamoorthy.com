@@ -12,6 +12,7 @@ print "<body>";
 
 print "<h1 align=center>Hello HTML World - Shekar Krishnamoorthy</h1><hr/>";
 print "<p>Hello World, from Shekar Krishnamoorthy</p>";
+print "<marquee>CSE 135</marquee>";
 print "<p>This page was generated with the Perl programming langauge</p>";
 
 $date = localtime();
