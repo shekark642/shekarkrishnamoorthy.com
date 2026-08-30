@@ -62,3 +62,24 @@ In Chrome DevTools' Network tab, after reloading the page with compression enabl
 | `hello.php` (PHP-generated) | `CSE135 Server` |
 
 Screenshot of the fetch/DevTools Network tab showing the changed header is included alongside this README.
+
+## Analytics: Matomo (chosen over Open Web Analytics)
+
+Considered both **Matomo** and **Open Web Analytics** for self-hosted analytics. Chose Matomo: it's actively maintained and supports PHP 8.3 (what this server runs); OWA's last release predates PHP 8 and would likely have compatibility problems.
+
+**Where it lives:** `/var/www/matomo` — deliberately kept *outside* this git repo and the deploy pipeline. Everything else in `/var/www/*` gets `rsync --delete`'d on every push, which would wipe out a database-backed app like Matomo. Instead, an Apache `Alias` on the `collector.shekarkrishnamoorthy.com` vhost maps `/analytics/` to that separate directory, so it's reachable at a normal URL under an existing domain/SSL cert without ever being touched by a deploy.
+
+**Install process:**
+1. Downloaded the official release tarball and extracted it to `/var/www/matomo`.
+2. Created a dedicated, least-privilege MySQL database and user (`matomo`, `GRANT ALL` scoped only to the `matomo` database, not the whole MySQL instance).
+3. Added the Apache `Alias` + `<Directory>` block (`AllowOverride All` is required here — Matomo ships its own `.htaccess` files to block direct web access to sensitive folders like `config/`, and without `AllowOverride All` those protections are silently ignored).
+4. Set file ownership to `www-data` (the Apache process user) so Matomo can write its cache/temp files.
+5. Ran through Matomo's own web-based setup wizard: system check, database connection, table creation, Superuser account, and initial website (`shekarkrishnamoorthy.com`) setup.
+6. Added the JavaScript tracking snippet to the main site's `<head>`.
+
+**Caught and fixed a real security issue during setup:** immediately after install, `config/config.ini.php` (which holds the plaintext database password) was directly downloadable over the web, because Matomo's protective `.htaccess` files hadn't been generated yet. Ran `php console core:create-security-files` (as `www-data`) to generate them, then verified the file returns 403 before proceeding further. Worth an explicit callout: don't assume a fresh install is safe by default, verify it.
+
+**Links for graders:**
+- Public dashboard/login: https://collector.shekarkrishnamoorthy.com/analytics/
+- Tracked site: shekarkrishnamoorthy.com (site ID 1)
+- Verify installation without logging in: `https://collector.shekarkrishnamoorthy.com/analytics/config/config.ini.php` should return 403 Forbidden (confirms the security files are active), and `https://collector.shekarkrishnamoorthy.com/analytics/matomo.js` should return the tracker JavaScript with a 200.
