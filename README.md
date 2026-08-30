@@ -2,6 +2,20 @@ Hello, this is the github page for shekarkrishnamoorthy.com
 
 Feel free to explore.
 
+## Deployment setup (GitHub → webhook → server)
+
+This repo is the single source of truth for all three domains hosted on this server: the main site (repo root), and `collector.shekarkrishnamoorthy.com` / `reporting.shekarkrishnamoorthy.com` (the `collector/` and `reporting/` folders). Nobody edits files directly on the server — every change goes through git, and deployment is fully automatic.
+
+**How a push becomes a live change:**
+
+1. `git push` to `main` on this repo.
+2. GitHub sends a webhook (an HTTP POST) to `https://shekarkrishnamoorthy.com/hooks/deploy-main`.
+3. Apache reverse-proxies anything under `/hooks/` to a listener running on `127.0.0.1:9000` — that listener is never reachable directly from the internet, only through Apache.
+4. The listener (the `webhook` program, run as a systemd service, config in `~/hooks.json`) checks two things before doing anything: the request's HMAC-SHA256 signature matches a shared secret only it and GitHub know (proves the request is genuinely from GitHub, not a forged POST to that URL), and the payload's branch ref is `refs/heads/main`.
+5. If both check out, it runs `~/bin/deploy-site.sh`, which `git fetch` + `git reset --hard origin/main`s a local clone, then `rsync`s the relevant folders into each domain's web root (`/var/www/<domain>/public_html`).
+
+**Anyone with push access to this repo can deploy to production** — the webhook signature only proves the request came from GitHub, not that the *push itself* was authorized by any particular person. GitHub's repo permissions are the actual security boundary here, not the webhook.
+
 ## Password-protected area
 
 The `/members` directory on shekarkrishnamoorthy.com is protected with HTTP Basic Authentication over HTTPS.
