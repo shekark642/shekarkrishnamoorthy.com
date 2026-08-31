@@ -1,0 +1,13 @@
+{
+  "name": "hw2-nodejs-demo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "HW2 NodeJS (Express) demos: hello-html, hello-json, environment, echo, state",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  }
+}
