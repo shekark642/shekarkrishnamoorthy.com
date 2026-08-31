@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Echo Form — Shekar Krishnamoorthy</title>
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<style>
+  :root {
+    --bg: #f8fafc; --card: #ffffff; --text: #0f172a; --muted: #475569;
+    --accent: #0284c7; --border: #dbe3ee;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg); color: var(--text);
+  }
+  main { max-width: 720px; margin: 0 auto; padding: 2.5rem 1.5rem 4rem; }
+  h1 { font-size: 1.6rem; }
+  .card {
+    background: var(--card); border: 1px solid var(--border); border-radius: 14px;
+    padding: 1.5rem; margin-top: 1.5rem;
+  }
+  label { display: block; font-size: 0.85rem; color: var(--muted); margin: 0.9rem 0 0.3rem; }
+  select, input[type="text"] {
+    width: 100%; padding: 0.55rem 0.7rem; border: 1px solid var(--border);
+    border-radius: 8px; font-size: 0.95rem;
+  }
+  .row { display: flex; gap: 1rem; flex-wrap: wrap; }
+  .row > div { flex: 1; min-width: 160px; }
+  button {
+    margin-top: 1.3rem; background: var(--accent); color: #fff; border: none;
+    padding: 0.7rem 1.4rem; border-radius: 8px; font-weight: 600; font-size: 0.95rem;
+    cursor: pointer;
+  }
+  button:hover { background: #0369a1; }
+  #result {
+    margin-top: 1.5rem; background: #0f172a; color: #e2e8f0; border-radius: 10px;
+    padding: 1rem; font-family: ui-monospace, Consolas, monospace; font-size: 0.85rem;
+    white-space: pre-wrap; word-break: break-word; display: none;
+  }
+  .note { font-size: 0.85rem; color: var(--muted); margin-top: 0.75rem; }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Echo Form</h1>
+  <p>Pick a language, method, and encoding, fill in a field or two, and submit. The
+  chosen backend echoes back exactly what it received, plus the server hostname,
+  date/time, your User-Agent, and your IP address.</p>
+
+  <noscript>
+    <p class="note"><strong>JavaScript is off.</strong> Native HTML forms can only do
+    GET and POST with x-www-form-urlencoded data, so this form will always submit as
+    <strong>POST / x-www-form-urlencoded / Python</strong> regardless of the pulldowns
+    below, and will navigate to a full new page showing the raw echoed response. Turn
+    JavaScript on to use PUT, DELETE, JSON encoding, or to switch languages without a
+    page reload.</p>
+  </noscript>
+
+  <form id="echoForm" class="card" method="POST" action="/echo-python" enctype="application/x-www-form-urlencoded">
+    <div class="row">
+      <div>
+        <label for="language">Language</label>
+        <select id="language" name="language">
+          <option value="nodejs">NodeJS (Express)</option>
+          <option value="python" selected>Python</option>
+          <option value="c">C</option>
+        </select>
+      </div>
+      <div>
+        <label for="method">HTTP Method</label>
+        <select id="method" name="method">
+          <option value="GET">GET</option>
+          <option value="POST" selected>POST</option>
+          <option value="PUT">PUT</option>
+          <option value="DELETE">DELETE</option>
+        </select>
+      </div>
+      <div>
+        <label for="encoding">Encoding</label>
+        <select id="encoding" name="encoding">
+          <option value="application/x-www-form-urlencoded" selected>x-www-form-urlencoded</option>
+          <option value="application/json">application/json</option>
+        </select>
+      </div>
+    </div>
+
+    <label for="fieldName">Name</label>
+    <input type="text" id="fieldName" name="name" placeholder="Your name">
+
+    <label for="fieldMessage">Message</label>
+    <input type="text" id="fieldMessage" name="message" placeholder="A short message">
+
+    <button type="submit">Send</button>
+    <p class="note" id="jsNote">JavaScript is on: submitting sends a background
+    request with the exact method/encoding/language chosen above, and shows the
+    response below without leaving this page.</p>
+  </form>
+
+  <pre id="result"></pre>
+
+  <p class="note"><a href="/hw2/index.html">&larr; Back to Homework 2</a></p>
+</main>
+
+<script>
+(function () {
+  "use strict";
+
+  var endpoints = {
+    nodejs: "/echo-nodejs",
+    python: "/echo-python",
+    c: "/echo-c"
+  };
+
+  var form = document.getElementById("echoForm");
+  var result = document.getElementById("result");
+  var languageSelect = document.getElementById("language");
+
+  function showResult(text) {
+    result.style.display = "block";
+    result.textContent = text;
+  }
+
+  form.addEventListener("submit", function (event) {
+    event.preventDefault();
+
+    var language = languageSelect.value;
+    var method = document.getElementById("method").value;
+    var encoding = document.getElementById("encoding").value;
+    var name = document.getElementById("fieldName").value;
+    var message = document.getElementById("fieldMessage").value;
+    var url = endpoints[language];
+
+    var fetchOptions = { method: method };
+    var fields = { name: name, message: message };
+
+    if (method === "GET" || method === "DELETE") {
+      var params = new URLSearchParams(fields);
+      url += "?" + params.toString();
+    } else {
+      if (encoding === "application/json") {
+        fetchOptions.headers = { "Content-Type": "application/json" };
+        fetchOptions.body = JSON.stringify(fields);
+      } else {
+        fetchOptions.headers = { "Content-Type": "application/x-www-form-urlencoded" };
+        fetchOptions.body = new URLSearchParams(fields).toString();
+      }
+    }
+
+    showResult("Sending " + method + " to " + url + " ...");
+
+    fetch(url, fetchOptions)
+      .then(function (response) {
+        return response.text().then(function (text) {
+          return { status: response.status, text: text };
+        });
+      })
+      .then(function (result_) {
+        showResult("HTTP " + result_.status + " from " + url + "\n\n" + result_.text);
+      })
+      .catch(function (err) {
+        showResult("Request failed: " + err.message);
+      });
+  });
+})();
+</script>
+</body>
+</html>
