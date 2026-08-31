@@ -7,6 +7,53 @@ as a reference and aren't part of this assignment's graded set.
 
 Live index of every endpoint: [hw2/index.html](hw2/index.html).
 
+## Matomo: pros and cons of self-hosted vs. third-party analytics
+
+This site also runs [Matomo](https://collector.shekarkrishnamoorthy.com/analytics/)
+(see `README.md`), a self-hosted, open-source alternative to fully third-party
+analytics SaaS like Google Analytics. Worth weighing directly, since this project
+runs both:
+
+**Pros**
+
+- **Full data ownership.** Visitor data never leaves our own server — nothing is
+  sent to a third party, which makes privacy/GDPR reasoning simpler since it's a
+  first-party data flow rather than a third-party disclosure.
+- **No sampling or processing caps.** The free self-hosted tier has no artificial
+  event/pageview limits or the report-sampling that GA4's free tier applies at
+  higher traffic volumes.
+- **Less likely to be blocked.** Ad blockers and browser tracking-protection lists
+  target well-known third-party tracking domains (`google-analytics.com`,
+  `*.logr-in.com`, etc.) by name. A self-hosted Matomo on our own domain isn't on
+  those lists, so it's less likely to be silently dropped by a visitor's blocker —
+  a real, verifiable difference from what we saw testing LogRocket's install.
+- **No usage-based pricing.** Free regardless of traffic growth, since we're not
+  paying per event or per monthly active user.
+- **Open source and extensible.** Auditable code, and a plugin ecosystem if more
+  than basic pageview/event tracking is ever needed.
+
+**Cons**
+
+- **We own the maintenance burden.** Security patches, PHP/MySQL upgrades, backups,
+  and uptime are entirely our responsibility — a third-party SaaS handles all of
+  that on infrastructure we never have to think about.
+- **Uses our own server resources.** Matomo's PHP requests and its MySQL tables
+  compete for the same CPU/memory/disk as everything else on this droplet — directly
+  relevant given how tight memory has been on this particular 2GB box throughout
+  this project.
+- **We own the security exposure too.** This isn't hypothetical here: right after
+  installing Matomo, its `config/config.ini.php` (containing the database password)
+  was briefly publicly downloadable until `core:create-security-files` was run — a
+  class of risk that simply doesn't exist when the analytics vendor runs its own
+  infrastructure.
+- **No aggregate intelligence or ecosystem integrations.** Google's scale gives GA4
+  cross-site benchmarking, predictive metrics, and direct integration with Google
+  Ads/Search Console — a single self-hosted instance has none of that by design.
+- **Single point of failure.** Google's analytics infrastructure is globally
+  distributed; Matomo here runs on the same one droplet as everything else on this
+  site, so an outage or resource exhaustion on this box affects analytics
+  collection too, not just the site itself.
+
 ## Architecture: two execution models, one Apache vhost
 
 Python and C run as **one-shot CGI**, the same model as the reference Perl demos —
