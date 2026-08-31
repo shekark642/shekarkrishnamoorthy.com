@@ -1,4 +1,9 @@
 *.pyc
 __pycache__/
 hw2/c/*.o
+hw2/c/hello-html-c
+hw2/c/hello-json-c
+hw2/c/environment-c
+hw2/c/echo-c
+hw2/c/state-c
 hw2/nodejs/node_modules/
