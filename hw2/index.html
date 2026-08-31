@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Homework 2 — Shekar Krishnamoorthy</title>
+<meta name="description" content="HW2: hello-html, hello-json, environment, echo, and state demos in NodeJS (Express), Python, and C.">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<style>
+  :root {
+    --bg: #f8fafc; --card: #ffffff; --text: #0f172a; --muted: #475569;
+    --accent: #0284c7; --accent2: #db2777; --border: #dbe3ee;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg); color: var(--text);
+  }
+  a { color: var(--accent); }
+  main { max-width: 900px; margin: 0 auto; padding: 2.5rem 1.5rem 4rem; }
+  h1 { font-size: 1.8rem; margin-bottom: 0.3rem; }
+  .subtitle { color: var(--muted); margin-top: 0; }
+  .card {
+    background: var(--card); border: 1px solid var(--border); border-radius: 14px;
+    padding: 1.5rem; margin-top: 1.5rem;
+  }
+  .card h2 { margin-top: 0; font-size: 1.2rem; }
+  .card h2 .lang-tag {
+    display: inline-block; font-size: 0.7rem; text-transform: uppercase;
+    letter-spacing: 0.06em; color: #fff; background: var(--accent);
+    padding: 0.15rem 0.5rem; border-radius: 6px; vertical-align: middle;
+    margin-left: 0.5rem;
+  }
+  ul.endpoints { list-style: none; margin: 0; padding: 0; }
+  ul.endpoints li {
+    display: flex; justify-content: space-between; gap: 1rem;
+    padding: 0.6rem 0; border-bottom: 1px solid var(--border);
+  }
+  ul.endpoints li:last-child { border-bottom: none; }
+  ul.endpoints .desc { color: var(--muted); font-size: 0.85rem; }
+  .highlight {
+    background: #eef2f7; border: 1px solid var(--border); border-radius: 10px;
+    padding: 1rem 1.25rem; margin-top: 1.5rem;
+  }
+  .note { font-size: 0.85rem; color: var(--muted); }
+  nav.page-nav { margin-top: 2.5rem; }
+  nav.page-nav a {
+    display: inline-block; text-decoration: none; color: var(--text);
+    background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+    padding: 0.6rem 1rem;
+  }
+  nav.page-nav a:hover { background: #eef2f7; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Homework 2</h1>
+  <p class="subtitle">Five example types, in three languages: NodeJS (Express), Python,
+  and C. Perl versions of the same demos were provided by the course as a reference
+  and are not part of this assignment's graded set.</p>
+
+  <div class="highlight">
+    <strong>Start here:</strong> <a href="/hw2/echo-form.html">the shared Echo Form</a>
+    — pick a language, HTTP method (GET/POST/PUT/DELETE), and encoding
+    (x-www-form-urlencoded or JSON), then submit to see any of the three echo
+    endpoints below respond live via vanilla JavaScript. It also works with
+    JavaScript off, in a reduced GET/POST-only mode.
+  </div>
+
+  <section class="card" aria-labelledby="nodejs-heading">
+    <h2 id="nodejs-heading">NodeJS <span class="lang-tag">Express</span></h2>
+    <p class="note">Runs as a persistent Express process (systemd user service),
+    reverse-proxied by Apache — not one-shot CGI like the other two languages.</p>
+    <ul class="endpoints">
+      <li><a href="/hello-html-nodejs">hello-html-nodejs</a> <span class="desc">HTML greeting + timestamp + IP</span></li>
+      <li><a href="/hello-json-nodejs">hello-json-nodejs</a> <span class="desc">same, as JSON</span></li>
+      <li><a href="/environment-nodejs">environment-nodejs</a> <span class="desc">request headers (Express's env-equivalent)</span></li>
+      <li><a href="/echo-nodejs">echo-nodejs</a> <span class="desc">echo backend — use the form above</span></li>
+      <li><a href="/state-nodejs">state-nodejs</a> <span class="desc">server-side session (in-memory, cookie-based)</span></li>
+    </ul>
+  </section>
+
+  <section class="card" aria-labelledby="python-heading">
+    <h2 id="python-heading">Python <span class="lang-tag">CGI</span></h2>
+    <p class="note">Runs as one-shot CGI scripts under Apache's mod_cgid, same
+    execution model as the reference Perl demos.</p>
+    <ul class="endpoints">
+      <li><a href="/hello-html-python">hello-html-python</a> <span class="desc">HTML greeting + timestamp + IP</span></li>
+      <li><a href="/hello-json-python">hello-json-python</a> <span class="desc">same, as JSON</span></li>
+      <li><a href="/environment-python">environment-python</a> <span class="desc">CGI environment variables</span></li>
+      <li><a href="/echo-python">echo-python</a> <span class="desc">echo backend — use the form above</span></li>
+      <li><a href="/state-python">state-python</a> <span class="desc">server-side session (file-based, cookie ID)</span></li>
+    </ul>
+  </section>
+
+  <section class="card" aria-labelledby="c-heading">
+    <h2 id="c-heading">C <span class="lang-tag">CGI</span></h2>
+    <p class="note">Compiled from source on every deploy and run as one-shot CGI
+    binaries under mod_cgid, no external libraries.</p>
+    <ul class="endpoints">
+      <li><a href="/hello-html-c">hello-html-c</a> <span class="desc">HTML greeting + timestamp + IP</span></li>
+      <li><a href="/hello-json-c">hello-json-c</a> <span class="desc">same, as JSON</span></li>
+      <li><a href="/environment-c">environment-c</a> <span class="desc">CGI environment variables</span></li>
+      <li><a href="/echo-c">echo-c</a> <span class="desc">echo backend — use the form above</span></li>
+      <li><a href="/state-c">state-c</a> <span class="desc">server-side session (file-based, cookie ID)</span></li>
+    </ul>
+  </section>
+
+  <nav class="page-nav">
+    <a href="/index.html">&larr; Back to homepage</a>
+  </nav>
+</main>
+</body>
+</html>
