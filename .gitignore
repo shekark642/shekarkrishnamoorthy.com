@@ -1,0 +1,4 @@
+*.pyc
+__pycache__/
+hw2/c/*.o
+hw2/nodejs/node_modules/
