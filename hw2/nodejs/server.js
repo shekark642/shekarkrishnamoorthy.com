@@ -17,6 +17,12 @@ app.use(express.json());
 // needed. Trade-off: it resets if the process restarts.
 const sessions = new Map();
 
+// Fingerprint demo: fully separate from the state-nodejs session above -
+// different cookie name, different Maps - so it can never affect the graded
+// HW2 state demo.
+const fpSessions = new Map(); // sessionId -> { fingerprint, savedValue, firstSeen, lastSeen }
+const fpIndex = new Map();    // fingerprint -> sessionId (reassociation lookup)
+
 function escapeHtml(value) {
   return String(value)
     .replace(/&/g, '&amp;')
@@ -173,6 +179,239 @@ Unlike the file-backed Python/C sessions, this resets if the Node process restar
 
 app.get('/state-nodejs', handleState);
 app.post('/state-nodejs', handleState);
+
+function newFpSessionId() {
+  return crypto.randomBytes(16).toString('hex');
+}
+
+function fpCookieOptions() {
+  return { httpOnly: true, sameSite: 'Lax', path: '/' };
+}
+
+app.post('/fingerprint-demo/identify', (req, res) => {
+  const cookies = parseCookies(req.headers.cookie);
+  const cookieSessionId = cookies.fp_session;
+  const fingerprint = typeof req.body.fingerprint === 'string' ? req.body.fingerprint.slice(0, 200) : '';
+
+  if (!fingerprint) {
+    res.status(400).json({ error: 'missing fingerprint' });
+    return;
+  }
+
+  let sessionId;
+  let status;
+
+  if (cookieSessionId && fpSessions.has(cookieSessionId)) {
+    sessionId = cookieSessionId;
+    status = 'cookie';
+    const record = fpSessions.get(sessionId);
+    record.fingerprint = fingerprint;
+    record.lastSeen = new Date().toISOString();
+    fpIndex.set(fingerprint, sessionId);
+  } else if (fpIndex.has(fingerprint)) {
+    sessionId = fpIndex.get(fingerprint);
+    status = 'reassociated';
+    fpSessions.get(sessionId).lastSeen = new Date().toISOString();
+    res.cookie('fp_session', sessionId, fpCookieOptions());
+  } else {
+    sessionId = newFpSessionId();
+    status = 'new';
+    const now = new Date().toISOString();
+    fpSessions.set(sessionId, { fingerprint, savedValue: '', firstSeen: now, lastSeen: now });
+    fpIndex.set(fingerprint, sessionId);
+    res.cookie('fp_session', sessionId, fpCookieOptions());
+  }
+
+  const record = fpSessions.get(sessionId);
+  res.json({
+    status,
+    sessionId,
+    fingerprint,
+    savedValue: record.savedValue,
+    firstSeen: record.firstSeen,
+    lastSeen: record.lastSeen,
+    knownFingerprints: fpIndex.size,
+  });
+});
+
+app.post('/fingerprint-demo/save', (req, res) => {
+  const cookies = parseCookies(req.headers.cookie);
+  const sessionId = cookies.fp_session;
+  if (!sessionId || !fpSessions.has(sessionId)) {
+    res.status(400).json({ error: 'no active fingerprint session - call /identify first' });
+    return;
+  }
+  const value = typeof req.body.value === 'string' ? req.body.value.slice(0, 500) : '';
+  fpSessions.get(sessionId).savedValue = value;
+  res.json({ savedValue: value });
+});
+
+app.post('/fingerprint-demo/clear-value', (req, res) => {
+  const cookies = parseCookies(req.headers.cookie);
+  const sessionId = cookies.fp_session;
+  if (sessionId && fpSessions.has(sessionId)) {
+    fpSessions.get(sessionId).savedValue = '';
+  }
+  res.json({ savedValue: '' });
+});
+
+app.post('/fingerprint-demo/expire-cookie', (req, res) => {
+  // Simulates a real visitor clearing cookies: the fp_session cookie goes
+  // away, but the underlying fpSessions/fpIndex record is untouched - that's
+  // exactly the gap the fingerprint reassociation is meant to close.
+  res.clearCookie('fp_session', { path: '/' });
+  res.json({ cleared: true });
+});
+
+app.get('/fingerprint-demo/', (req, res) => {
+  res.type('html').send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Fingerprint Demo - Shekar Krishnamoorthy</title>
+<style>
+  body { font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background:#f8fafc; color:#0f172a; margin:0; }
+  main { max-width: 680px; margin: 0 auto; padding: 2.5rem 1.5rem 4rem; }
+  h1 { font-size: 1.6rem; }
+  .card { background:#fff; border:1px solid #dbe3ee; border-radius:14px; padding:1.5rem; margin-top:1.5rem; }
+  .banner { border-radius:10px; padding:1rem 1.25rem; margin-top:1.5rem; font-weight:600; }
+  .banner.new { background:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe; }
+  .banner.cookie { background:#ecfdf5; color:#047857; border:1px solid #a7f3d0; }
+  .banner.reassociated { background:#fff7ed; color:#c2410c; border:1px solid #fed7aa; }
+  dl { display:grid; grid-template-columns: max-content 1fr; gap: 0.4rem 1rem; font-size:0.9rem; }
+  dt { color:#475569; }
+  dd { margin:0; font-family: ui-monospace, Consolas, monospace; word-break: break-all; }
+  input[type=text] { width:100%; padding:0.55rem 0.7rem; border:1px solid #dbe3ee; border-radius:8px; font-size:0.95rem; box-sizing:border-box; }
+  button { margin-top:0.75rem; margin-right:0.5rem; border:none; padding:0.6rem 1.1rem; border-radius:8px; font-weight:600; cursor:pointer; }
+  .btn-save { background:#0284c7; color:#fff; }
+  .btn-save:hover { background:#0369a1; }
+  .btn-clear { background:#e2e8f0; color:#0f172a; }
+  .btn-clear:hover { background:#cbd5e1; }
+  .btn-danger { background:#fee2e2; color:#b91c1c; }
+  .btn-danger:hover { background:#fecaca; }
+  .note { font-size:0.85rem; color:#475569; }
+  a { color:#0284c7; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Fingerprint Re-association Demo</h1>
+  <p>This page computes a browser fingerprint with
+  <a href="https://github.com/fingerprintjs/fingerprintjs" target="_blank" rel="noopener">FingerprintJS</a>
+  (open-source) and combines it with the same cookie-based server-side session pattern
+  used in the HW2 state demos. Full explanation in
+  <a href="/EXTRA_CREDIT_FINGERPRINT.md">EXTRA_CREDIT_FINGERPRINT.md</a>.</p>
+
+  <div id="banner" class="banner new">Computing your fingerprint...</div>
+
+  <div class="card">
+    <dl>
+      <dt>Status</dt><dd id="statusText">-</dd>
+      <dt>Session ID</dt><dd id="sessionId">-</dd>
+      <dt>Fingerprint</dt><dd id="fingerprintId">-</dd>
+      <dt>First seen</dt><dd id="firstSeen">-</dd>
+      <dt>Known fingerprints (this server)</dt><dd id="knownCount">-</dd>
+    </dl>
+  </div>
+
+  <div class="card">
+    <label for="valueInput"><strong>Saved value</strong> (tied to your session, restored on reassociation)</label>
+    <input type="text" id="valueInput" maxlength="500" placeholder="Type something and Save">
+    <div>
+      <button class="btn-save" id="saveBtn">Save</button>
+      <button class="btn-clear" id="clearValueBtn">Clear saved value</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <p><strong>Try the trick:</strong> Save a value above, then click below to simulate
+    clearing your cookies (this only removes the cookie, not your fingerprint - a real
+    "clear cookies" click in your browser does the same). Then reload this page.</p>
+    <button class="btn-danger" id="expireBtn">Simulate clearing cookies</button>
+    <p class="note">If reassociation works, the banner above will turn orange
+    ("reassociated via fingerprint") after reload, and your saved value will still be there
+    even though the cookie was gone.</p>
+  </div>
+
+  <p class="note"><a href="/hw2/index.html">&larr; Back to Homework 2</a></p>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@fingerprintjs/fingerprintjs@4/dist/fp.min.js"></script>
+<script>
+(function () {
+  "use strict";
+
+  var banner = document.getElementById("banner");
+  var statusText = document.getElementById("statusText");
+  var sessionIdEl = document.getElementById("sessionId");
+  var fingerprintEl = document.getElementById("fingerprintId");
+  var firstSeenEl = document.getElementById("firstSeen");
+  var knownCountEl = document.getElementById("knownCount");
+  var valueInput = document.getElementById("valueInput");
+
+  var labels = {
+    new: "New visitor - no cookie, no matching fingerprint on file.",
+    cookie: "Recognized via cookie (the normal case).",
+    reassociated: "No cookie was found, but your fingerprint matched a previous visit - reassociated!"
+  };
+
+  function render(data) {
+    banner.className = "banner " + data.status;
+    banner.textContent = labels[data.status] || data.status;
+    statusText.textContent = data.status;
+    sessionIdEl.textContent = data.sessionId;
+    fingerprintEl.textContent = data.fingerprint;
+    firstSeenEl.textContent = data.firstSeen;
+    knownCountEl.textContent = data.knownFingerprints;
+    valueInput.value = data.savedValue || "";
+  }
+
+  function identify() {
+    banner.className = "banner new";
+    banner.textContent = "Computing your fingerprint...";
+    FingerprintJS.load().then(function (fp) {
+      return fp.get();
+    }).then(function (result) {
+      return fetch("/fingerprint-demo/identify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fingerprint: result.visitorId })
+      });
+    }).then(function (r) { return r.json(); })
+      .then(render)
+      .catch(function (err) {
+        banner.textContent = "Fingerprinting failed: " + err.message;
+      });
+  }
+
+  document.getElementById("saveBtn").addEventListener("click", function () {
+    fetch("/fingerprint-demo/save", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ value: valueInput.value })
+    }).then(function (r) { return r.json(); }).then(function () { identify(); });
+  });
+
+  document.getElementById("clearValueBtn").addEventListener("click", function () {
+    fetch("/fingerprint-demo/clear-value", { method: "POST" })
+      .then(function () { identify(); });
+  });
+
+  document.getElementById("expireBtn").addEventListener("click", function () {
+    fetch("/fingerprint-demo/expire-cookie", { method: "POST" })
+      .then(function () {
+        banner.className = "banner new";
+        banner.textContent = "Cookie cleared. Reload the page to test reassociation.";
+      });
+  });
+
+  identify();
+})();
+</script>
+</body>
+</html>`);
+});
 
 // Body-parser errors (malformed JSON, etc.) land here instead of Express's
 // default error page.
