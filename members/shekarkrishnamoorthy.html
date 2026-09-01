@@ -7,7 +7,12 @@
 <meta name="description" content="Personal about page for Shekar Krishnamoorthy.">
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <link rel="alternate icon" href="/favicon.ico">
+<link rel="stylesheet" href="/assets/site-nav.css">
+<script src="/assets/analytics.js"></script>
 <style>
+  /* This page intentionally uses a different theme than the rest of the
+     site - overriding the shared design tokens from site-nav.css here
+     cascades automatically into every shared rule that reads var(...). */
   :root {
     --bg: #fff7ed;
     --card: #ffffff;
@@ -16,13 +21,6 @@
     --accent: #ea580c;
     --accent2: #0d9488;
     --border: #f1e4d4;
-  }
-  * { box-sizing: border-box; }
-  body {
-    margin: 0;
-    font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    background: var(--bg);
-    color: var(--text);
   }
   main {
     max-width: 760px;
@@ -129,23 +127,7 @@
     line-height: 1.8;
   }
 
-  nav.page-nav {
-    display: flex;
-    justify-content: space-between;
-    gap: 1rem;
-    margin-top: 2.5rem;
-  }
-  nav.page-nav a {
-    flex: 1;
-    text-align: center;
-    text-decoration: none;
-    color: var(--text);
-    background: var(--card);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 0.75rem 1rem;
-    transition: background 0.2s ease;
-  }
+  /* Warm-theme hover override for this page's palette (shared default is a cool gray). */
   nav.page-nav a:hover { background: #fef3ec; }
 
   footer {
@@ -155,10 +137,6 @@
     margin-top: 2rem;
   }
 </style>
-<!-- LogRocket -->
-<script src="https://cdn.logr-in.com/LogRocket.min.js" crossorigin="anonymous"></script>
-<script>window.LogRocket && window.LogRocket.init('zwvdgp/shekarkrishnamoorthycom');</script>
-<!-- End LogRocket -->
 </head>
 <body>
 <main>
