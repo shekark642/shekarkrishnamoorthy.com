@@ -3,19 +3,22 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Gear — test.shekarkrishnamoorthy.com</title>
+<title>Build Your Grounds — test.shekarkrishnamoorthy.com</title>
 <style>
   :root {
     --bg: #0d0221; --card: #1c1042; --text: #f4f0ff; --muted: #b7a9e0;
-    --accent: #ff2ecb; --accent2: #22e5ff; --border: #3a2a6e;
+    --accent: #ff2ecb; --accent2: #22e5ff; --accent3: #ffd23f; --border: #3a2a6e;
+    --grass: #170a3a;
   }
   * { box-sizing: border-box; }
   body {
-    margin: 0; min-height: 100vh; display: flex; flex-direction: column;
+    margin: 0;
     font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     background: radial-gradient(circle at 20% -10%, #33146b 0%, var(--bg) 55%);
     color: var(--text);
   }
+  a { color: var(--accent2); }
+
   nav.top {
     position: sticky; top: 0; z-index: 10;
     display: flex; align-items: center; justify-content: space-between;
@@ -34,11 +37,73 @@
   }
   nav.top a:hover { background: rgba(255,255,255,0.08); }
   nav.top a.active { background: linear-gradient(90deg, var(--accent), var(--accent2)); color: #10041f; }
-  main { flex: 1; display: flex; align-items: center; justify-content: center; text-align: center; padding: 2rem; }
-  main div { max-width: 420px; }
-  h1 { font-size: 2rem; margin-bottom: 0.5rem; }
-  p { color: var(--muted); }
-  a.back { color: var(--accent2); }
+
+  main { max-width: 1000px; margin: 0 auto; padding: 0 1.5rem 5rem; }
+
+  .hero { text-align: center; padding: 3rem 1rem 1.5rem; }
+  .hero h1 {
+    font-size: clamp(1.9rem, 5vw, 2.8rem); margin: 0 0 0.6rem;
+    background: linear-gradient(90deg, var(--accent3), var(--accent), var(--accent2));
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .hero p { color: var(--muted); max-width: 600px; margin: 0 auto; }
+
+  /* ---------- Budget bar ---------- */
+  .budget-bar {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 1.2rem;
+    background: var(--card); border: 1px solid var(--border); border-radius: 14px;
+    padding: 1rem 1.3rem; margin-top: 1.5rem;
+  }
+  .budget-bar .stat { min-width: 120px; }
+  .budget-bar .stat label { display: block; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+  .budget-bar .stat .val { font-size: 1.2rem; font-weight: 800; }
+  .budget-bar input[type="number"] {
+    width: 130px; padding: 0.5rem 0.6rem; border-radius: 8px; border: 1px solid var(--border);
+    background: #0f0630; color: var(--text); font-size: 1rem; font-weight: 700;
+  }
+  #remainingVal.over { color: #ff5e5e; }
+  .budget-bar button {
+    margin-left: auto; border: none; border-radius: 8px; padding: 0.6rem 1rem;
+    background: rgba(255,255,255,0.08); color: var(--text); font-weight: 700; cursor: pointer;
+  }
+  .budget-bar button:hover { background: rgba(255,255,255,0.15); }
+
+  /* ---------- Palette ---------- */
+  .palette {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    gap: 0.7rem; margin-top: 1.2rem;
+  }
+  .palette button {
+    display: flex; flex-direction: column; align-items: center; gap: 0.2rem;
+    border: 1px solid var(--border); border-radius: 12px; padding: 0.7rem 0.5rem;
+    background: var(--card); color: var(--text); cursor: pointer; font-family: inherit;
+  }
+  .palette button .emoji { font-size: 1.6rem; }
+  .palette button .name { font-size: 0.78rem; font-weight: 700; text-align: center; }
+  .palette button .cost { font-size: 0.75rem; color: var(--muted); }
+  .palette button:hover { border-color: var(--accent2); }
+  .palette button.selected {
+    border-color: var(--accent); background: rgba(255,46,203,0.12);
+    box-shadow: 0 0 0 2px rgba(255,46,203,0.35);
+  }
+
+  .hint { font-size: 0.82rem; color: var(--muted); margin: 0.8rem 0 0.5rem; }
+
+  /* ---------- Grounds grid ---------- */
+  .grounds {
+    display: grid; grid-template-columns: repeat(12, 1fr);
+    gap: 4px; background: var(--grass); border: 1px solid var(--border);
+    border-radius: 14px; padding: 6px;
+  }
+  .cell {
+    aspect-ratio: 1 / 1; border-radius: 6px; background: rgba(255,255,255,0.04);
+    display: flex; align-items: center; justify-content: center; cursor: pointer;
+    font-size: 1.3rem; user-select: none; transition: background 0.15s ease;
+  }
+  .cell:hover { background: rgba(255,255,255,0.1); }
+  .cell.filled { cursor: pointer; background: rgba(255,255,255,0.07); }
+
+  footer { text-align: center; color: var(--muted); font-size: 0.8rem; padding: 2rem 1rem; }
 </style>
 </head>
 <body>
@@ -47,15 +112,178 @@
   <ul>
     <li><a href="/index.html">Festivals</a></li>
     <li><a href="/page2.html">Industry</a></li>
-    <li><a href="/page3.html" class="active">Gear</a></li>
+    <li><a href="/page3.html" class="active">Build</a></li>
   </ul>
 </nav>
+
 <main>
-  <div>
-    <h1>Gear</h1>
-    <p>Coming soon.</p>
-    <a class="back" href="/index.html">&larr; Back to Festivals</a>
+  <section class="hero">
+    <h1>Build Your Grounds</h1>
+    <p>Lay out your own festival: pick items, place them on the grounds, and stay on budget.</p>
+  </section>
+
+  <div class="budget-bar">
+    <div class="stat">
+      <label for="totalBudget">Total budget</label>
+      <input type="number" id="totalBudget" min="0" step="1000" value="200000">
+    </div>
+    <div class="stat">
+      <label>Spent</label>
+      <div class="val" id="spentVal">$0</div>
+    </div>
+    <div class="stat">
+      <label>Remaining</label>
+      <div class="val" id="remainingVal">$200,000</div>
+    </div>
+    <button type="button" id="clearBtn">Clear Grounds</button>
   </div>
+
+  <div class="palette" id="palette"></div>
+  <p class="hint">Click an item above, then click an empty spot on the grounds to place it. Click a placed item to remove it (refunds its cost).</p>
+
+  <div class="grounds" id="grounds"></div>
+
+  <footer>Shekar Krishnamoorthy &mdash; test.shekarkrishnamoorthy.com</footer>
 </main>
+
+<script>
+(function () {
+  "use strict";
+
+  var ITEMS = [
+    { id: "mainstage", name: "Main Stage",   emoji: "🎪", cost: 50000 },
+    { id: "stage2",    name: "Second Stage", emoji: "🎵", cost: 25000 },
+    { id: "bar",       name: "Bar",          emoji: "🍺", cost: 5000 },
+    { id: "food",      name: "Food Truck",   emoji: "🌭", cost: 4000 },
+    { id: "restroom",  name: "Restroom",     emoji: "🚻", cost: 2000 },
+    { id: "merch",     name: "Merch Tent",   emoji: "🛍️", cost: 3000 },
+    { id: "vip",       name: "VIP Lounge",   emoji: "👑", cost: 15000 },
+    { id: "camp",      name: "Camping Zone", emoji: "⛺", cost: 8000 },
+    { id: "wheel",     name: "Ferris Wheel", emoji: "🎡", cost: 20000 },
+    { id: "parking",   name: "Parking",      emoji: "🅿️", cost: 6000 }
+  ];
+  var ITEM_BY_ID = {};
+  ITEMS.forEach(function (it) { ITEM_BY_ID[it.id] = it; });
+
+  var GRID_COLS = 12, GRID_ROWS = 8;
+  var placed = {}; // cellIndex -> item id
+  var selectedItemId = null;
+
+  var paletteEl = document.getElementById("palette");
+  var groundsEl = document.getElementById("grounds");
+  var totalBudgetEl = document.getElementById("totalBudget");
+  var spentValEl = document.getElementById("spentVal");
+  var remainingValEl = document.getElementById("remainingVal");
+
+  function money(n) {
+    return "$" + n.toLocaleString("en-US");
+  }
+
+  function renderPalette() {
+    paletteEl.innerHTML = "";
+    ITEMS.forEach(function (it) {
+      var btn = document.createElement("button");
+      btn.type = "button";
+      btn.dataset.id = it.id;
+      if (it.id === selectedItemId) btn.classList.add("selected");
+      btn.innerHTML =
+        '<span class="emoji">' + it.emoji + '</span>' +
+        '<span class="name">' + it.name + '</span>' +
+        '<span class="cost">' + money(it.cost) + '</span>';
+      btn.addEventListener("click", function () {
+        selectedItemId = (selectedItemId === it.id) ? null : it.id;
+        renderPalette();
+      });
+      paletteEl.appendChild(btn);
+    });
+  }
+
+  function buildGrid() {
+    groundsEl.innerHTML = "";
+    for (var i = 0; i < GRID_COLS * GRID_ROWS; i++) {
+      var cell = document.createElement("div");
+      cell.className = "cell";
+      cell.dataset.index = i;
+      cell.addEventListener("click", onCellClick);
+      groundsEl.appendChild(cell);
+    }
+  }
+
+  function spentTotal() {
+    var total = 0;
+    Object.keys(placed).forEach(function (idx) {
+      total += ITEM_BY_ID[placed[idx]].cost;
+    });
+    return total;
+  }
+
+  function updateBudgetDisplay() {
+    var totalBudget = parseInt(totalBudgetEl.value, 10) || 0;
+    var spent = spentTotal();
+    var remaining = totalBudget - spent;
+    spentValEl.textContent = money(spent);
+    remainingValEl.textContent = money(remaining);
+    remainingValEl.classList.toggle("over", remaining < 0);
+  }
+
+  function onCellClick(e) {
+    var idx = e.currentTarget.dataset.index;
+
+    if (placed[idx]) {
+      // remove & refund
+      delete placed[idx];
+      renderGroundsCell(idx);
+      updateBudgetDisplay();
+      return;
+    }
+
+    if (!selectedItemId) return;
+
+    var item = ITEM_BY_ID[selectedItemId];
+    var totalBudget = parseInt(totalBudgetEl.value, 10) || 0;
+    var remaining = totalBudget - spentTotal();
+    if (item.cost > remaining) {
+      flashCell(e.currentTarget, "#ff5e5e");
+      return;
+    }
+
+    placed[idx] = selectedItemId;
+    renderGroundsCell(idx);
+    updateBudgetDisplay();
+  }
+
+  function renderGroundsCell(idx) {
+    var cell = groundsEl.querySelector('.cell[data-index="' + idx + '"]');
+    if (placed[idx]) {
+      cell.textContent = ITEM_BY_ID[placed[idx]].emoji;
+      cell.title = ITEM_BY_ID[placed[idx]].name + " - click to remove";
+      cell.classList.add("filled");
+    } else {
+      cell.textContent = "";
+      cell.title = "";
+      cell.classList.remove("filled");
+    }
+  }
+
+  function flashCell(cellEl, color) {
+    var original = cellEl.style.background;
+    cellEl.style.background = color;
+    setTimeout(function () { cellEl.style.background = original; }, 200);
+  }
+
+  document.getElementById("clearBtn").addEventListener("click", function () {
+    placed = {};
+    buildGrid();
+    updateBudgetDisplay();
+  });
+
+  totalBudgetEl.addEventListener("input", updateBudgetDisplay);
+
+  renderPalette();
+  buildGrid();
+  updateBudgetDisplay();
+})();
+</script>
+
 </body>
 </html>
