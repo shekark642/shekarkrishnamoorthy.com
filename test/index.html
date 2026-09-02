@@ -1,18 +1,373 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Basic Website</title>
-</head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Big Music Festivals — test.shekarkrishnamoorthy.com</title>
+<style>
+  :root {
+    --bg: #0d0221;
+    --bg2: #170a3a;
+    --card: #1c1042;
+    --text: #f4f0ff;
+    --muted: #b7a9e0;
+    --accent: #ff2ecb;
+    --accent2: #22e5ff;
+    --accent3: #ffd23f;
+    --border: #3a2a6e;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: radial-gradient(circle at 20% -10%, #33146b 0%, var(--bg) 55%);
+    color: var(--text);
+  }
+  a { color: var(--accent2); }
 
+  /* ---------- Navbar ---------- */
+  nav.top {
+    position: sticky; top: 0; z-index: 10;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 1rem 1.5rem;
+    background: rgba(13, 2, 33, 0.85);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--border);
+  }
+  nav.top .brand {
+    font-weight: 800; font-size: 1.1rem; letter-spacing: 0.02em;
+    background: linear-gradient(90deg, var(--accent), var(--accent2));
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  nav.top ul {
+    list-style: none; display: flex; gap: 0.5rem; margin: 0; padding: 0;
+  }
+  nav.top a {
+    display: inline-block; text-decoration: none; color: var(--text);
+    font-size: 0.9rem; font-weight: 600; padding: 0.5rem 0.9rem;
+    border-radius: 8px; transition: background 0.2s ease;
+  }
+  nav.top a:hover { background: rgba(255,255,255,0.08); }
+  nav.top a.active { background: linear-gradient(90deg, var(--accent), var(--accent2)); color: #10041f; }
+
+  main { max-width: 960px; margin: 0 auto; padding: 0 1.5rem 5rem; }
+
+  /* ---------- Hero ---------- */
+  .hero { text-align: center; padding: 3.5rem 1rem 2.5rem; }
+  .hero h1 {
+    font-size: clamp(2rem, 6vw, 3.2rem); margin: 0 0 0.6rem;
+    background: linear-gradient(90deg, var(--accent3), var(--accent), var(--accent2));
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .hero p { color: var(--muted); max-width: 560px; margin: 0 auto; font-size: 1.05rem; }
+
+  /* ---------- Festival cards ---------- */
+  .festivals {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 1.5rem; margin-top: 1rem;
+  }
+  .fcard {
+    border-radius: 18px; overflow: hidden; border: 1px solid var(--border);
+    background: var(--card);
+  }
+  .fcard .art {
+    height: 150px; position: relative;
+    display: flex; align-items: flex-end; padding: 1rem;
+  }
+  .fcard .art::after {
+    content: ""; position: absolute; inset: 0; opacity: 0.35;
+    background-image: radial-gradient(circle at 20% 30%, #fff 0, transparent 3%),
+      radial-gradient(circle at 70% 60%, #fff 0, transparent 2%),
+      radial-gradient(circle at 45% 80%, #fff 0, transparent 2.5%),
+      radial-gradient(circle at 85% 20%, #fff 0, transparent 2%),
+      radial-gradient(circle at 10% 75%, #fff 0, transparent 2%);
+  }
+  .fcard .art span {
+    position: relative; font-weight: 800; font-size: 1.3rem; color: #fff;
+    text-shadow: 0 2px 10px rgba(0,0,0,0.4);
+  }
+  .fcard .art.a1 { background: linear-gradient(135deg, #ff2ecb, #6a11cb); }
+  .fcard .art.a2 { background: linear-gradient(135deg, #22e5ff, #0038ff); }
+  .fcard .art.a3 { background: linear-gradient(135deg, #ffd23f, #ff5e3a); }
+  .fcard .art.a4 { background: linear-gradient(135deg, #7cff6b, #0bd3a8); }
+  .fcard .body { padding: 1.1rem 1.2rem 1.3rem; }
+  .fcard .body p.question { margin: 0 0 0.8rem; font-size: 0.9rem; color: var(--muted); }
+  .fcard .rating-row {
+    display: flex; align-items: center; gap: 0.7rem;
+  }
+  .fcard input[type="range"] { flex: 1; }
+  .fcard .rating-label {
+    min-width: 3.4rem; text-align: right; font-weight: 700; font-size: 0.95rem;
+  }
+  .note {
+    font-size: 0.78rem; color: var(--muted); margin-top: 0.6rem; opacity: 0.85;
+  }
+
+  /* range input styling */
+  input[type="range"] {
+    -webkit-appearance: none; appearance: none; height: 6px; border-radius: 999px;
+    background: var(--border); outline: none;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none; width: 18px; height: 18px;
+    border-radius: 50%; background: linear-gradient(135deg, var(--accent), var(--accent2));
+    cursor: pointer; border: 2px solid #fff;
+  }
+  input[type="range"]::-moz-range-thumb {
+    width: 18px; height: 18px; border-radius: 50%;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    cursor: pointer; border: 2px solid #fff;
+  }
+
+  /* ---------- Form section ---------- */
+  section.panel {
+    background: var(--card); border: 1px solid var(--border); border-radius: 18px;
+    padding: 1.75rem 1.75rem 2rem; margin-top: 2.5rem;
+  }
+  section.panel h2 { margin-top: 0; font-size: 1.35rem; }
+  section.panel p.lead { color: var(--muted); margin-top: -0.4rem; }
+
+  .field { margin-top: 1.2rem; }
+  .field label { display: block; font-weight: 600; font-size: 0.9rem; margin-bottom: 0.4rem; }
+  .field input[type="number"], .field input[type="text"] {
+    width: 100%; padding: 0.65rem 0.8rem; border-radius: 10px;
+    border: 1px solid var(--border); background: #0f0630; color: var(--text);
+    font-size: 0.95rem;
+  }
+  .field .slider-row { display: flex; align-items: center; gap: 1rem; }
+  .field .slider-row input[type="range"] { flex: 1; }
+  .field .slider-value { font-weight: 800; font-size: 1.05rem; min-width: 5.5rem; text-align: right; }
+
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 1.2rem; }
+  @media (max-width: 560px) { .two-col { grid-template-columns: 1fr; } }
+
+  /* ---------- Genre input, glow style ---------- */
+  .genre-wrap { margin-top: 1.2rem; }
+  .genre-input {
+    position: relative; border-radius: 14px; padding: 2px;
+    background: linear-gradient(90deg, var(--accent), var(--accent2), var(--accent3), var(--accent));
+    background-size: 300% 100%; animation: glowmove 6s linear infinite;
+  }
+  @keyframes glowmove { to { background-position: 300% 0; } }
+  .genre-input input {
+    width: 100%; padding: 0.85rem 1rem; border-radius: 12px; border: none;
+    background: #10041f; color: #fff; font-size: 1.05rem; font-weight: 600;
+    outline: none;
+  }
+  .genre-input input::placeholder { color: #8f7ec2; font-weight: 400; }
+
+  /* ---------- News links ---------- */
+  ul.news { list-style: none; padding: 0; margin: 0.5rem 0 0; }
+  ul.news li {
+    padding: 0.7rem 0; border-bottom: 1px solid var(--border);
+    display: flex; justify-content: space-between; gap: 1rem; align-items: center;
+  }
+  ul.news li:last-child { border-bottom: none; }
+  ul.news a { font-weight: 600; }
+  ul.news .desc { color: var(--muted); font-size: 0.82rem; }
+
+  /* ---------- Submit ---------- */
+  button.submit {
+    margin-top: 1.6rem; width: 100%; padding: 1rem; border: none; border-radius: 12px;
+    font-size: 1.05rem; font-weight: 800; cursor: pointer; color: #10041f;
+    background: linear-gradient(90deg, var(--accent3), var(--accent), var(--accent2));
+    background-size: 200% 100%; transition: background-position 0.3s ease, transform 0.1s ease;
+  }
+  button.submit:hover { background-position: 100% 0; }
+  button.submit:active { transform: scale(0.98); }
+
+  #confirmation {
+    display: none; margin-top: 1.5rem; padding: 1.25rem 1.5rem; border-radius: 14px;
+    background: rgba(34, 229, 255, 0.08); border: 1px solid var(--accent2);
+  }
+  #confirmation h3 { margin: 0 0 0.6rem; color: var(--accent2); }
+  #confirmation dl { display: grid; grid-template-columns: max-content 1fr; gap: 0.3rem 1rem; font-size: 0.9rem; margin: 0; }
+  #confirmation dt { color: var(--muted); }
+  #confirmation dd { margin: 0; font-weight: 600; }
+
+  footer { text-align: center; color: var(--muted); font-size: 0.8rem; padding: 2rem 1rem; }
+</style>
+</head>
 <body>
-  <h1>Shekar's test domain</h1>
-  <script>
-    document.write(`Live @ ${new Date()}`);
-  </script>
+
+<nav class="top">
+  <span class="brand">FESTIVAL PULSE</span>
+  <ul>
+    <li><a href="/index.html" class="active">Festivals</a></li>
+    <li><a href="/page2.html">Lineups</a></li>
+    <li><a href="/page3.html">Gear</a></li>
+  </ul>
+</nav>
+
+<main>
+  <section class="hero">
+    <h1>Big Music Festivals</h1>
+    <p>Rate how much each one speaks to you, then tell us what would get you on a plane.</p>
+  </section>
+
+  <section class="festivals">
+    <article class="fcard">
+      <div class="art a1"><span>Tomorrowland</span></div>
+      <div class="body">
+        <p class="question">How much does Tomorrowland's main-stage spectacle pull you in?</p>
+        <div class="rating-row">
+          <input type="range" min="1" max="10" value="5" class="rating" data-name="Tomorrowland">
+          <span class="rating-label">5 / 10</span>
+        </div>
+      </div>
+    </article>
+
+    <article class="fcard">
+      <div class="art a2"><span>Coachella</span></div>
+      <div class="body">
+        <p class="question">Desert heat, huge lineups &mdash; how excited does Coachella make you?</p>
+        <div class="rating-row">
+          <input type="range" min="1" max="10" value="5" class="rating" data-name="Coachella">
+          <span class="rating-label">5 / 10</span>
+        </div>
+      </div>
+    </article>
+
+    <article class="fcard">
+      <div class="art a3"><span>EDC Las Vegas</span></div>
+      <div class="body">
+        <p class="question">Under the electric sky &mdash; how much do you want in on EDC?</p>
+        <div class="rating-row">
+          <input type="range" min="1" max="10" value="5" class="rating" data-name="EDC Las Vegas">
+          <span class="rating-label">5 / 10</span>
+        </div>
+      </div>
+    </article>
+
+    <article class="fcard">
+      <div class="art a4"><span>Ultra Music Festival</span></div>
+      <div class="body">
+        <p class="question">Miami bass and non-stop sets &mdash; rate your Ultra hype.</p>
+        <div class="rating-row">
+          <input type="range" min="1" max="10" value="5" class="rating" data-name="Ultra Music Festival">
+          <span class="rating-label">5 / 10</span>
+        </div>
+      </div>
+    </article>
+  </section>
+  <p class="note">Festival art above is stylized placeholder artwork, not photography &mdash; swap in real images by replacing the <code>.art</code> divs with <code>&lt;img&gt;</code> tags once you have licensed photos.</p>
+
+  <section class="panel">
+    <h2>Tell us about you</h2>
+    <p class="lead">A few quick questions to see who's actually reading this.</p>
+
+    <div class="two-col">
+      <div class="field">
+        <label for="age">Age</label>
+        <input type="number" id="age" name="age" min="13" max="110" placeholder="e.g. 24">
+      </div>
+      <div class="field">
+        <label for="location">Location (city, state/country)</label>
+        <input type="text" id="location" name="location" placeholder="e.g. Austin, TX">
+      </div>
+    </div>
+
+    <div class="field">
+      <label for="budget">How much would you spend on tickets + travel for one of these?</label>
+      <div class="slider-row">
+        <input type="range" id="budget" min="0" max="3000" step="50" value="500">
+        <span class="slider-value" id="budgetValue">$500</span>
+      </div>
+    </div>
+
+    <div class="genre-wrap">
+      <label for="genre" style="display:block; font-weight:600; font-size:0.9rem; margin-bottom:0.4rem;">What's your festival soundtrack?</label>
+      <div class="genre-input">
+        <input type="text" id="genre" name="genre" placeholder="Type your favorite kind of music...">
+      </div>
+    </div>
+
+    <button type="button" class="submit" id="submitBtn">Submit</button>
+
+    <div id="confirmation">
+      <h3>Thanks &mdash; here's what you told us</h3>
+      <dl id="confirmationList"></dl>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>EDM News</h2>
+    <ul class="news">
+      <li>
+        <a href="https://dancingastronaut.com" target="_blank" rel="noopener">Dancing Astronaut</a>
+        <span class="desc">Releases, tour announcements, festival coverage</span>
+      </li>
+      <li>
+        <a href="https://edm.com" target="_blank" rel="noopener">EDM.com</a>
+        <span class="desc">News, interviews, and premieres</span>
+      </li>
+      <li>
+        <a href="https://youredm.com" target="_blank" rel="noopener">Your EDM</a>
+        <span class="desc">Daily electronic music news</span>
+      </li>
+      <li>
+        <a href="https://mixmag.net" target="_blank" rel="noopener">Mixmag</a>
+        <span class="desc">Global dance music culture and events</span>
+      </li>
+    </ul>
+  </section>
+
+  <footer>Shekar Krishnamoorthy &mdash; test.shekarkrishnamoorthy.com</footer>
+</main>
+
+<script>
+(function () {
+  "use strict";
+
+  document.querySelectorAll(".rating").forEach(function (slider) {
+    var label = slider.closest(".rating-row").querySelector(".rating-label");
+    var update = function () { label.textContent = slider.value + " / 10"; };
+    slider.addEventListener("input", update);
+    update();
+  });
+
+  var budget = document.getElementById("budget");
+  var budgetValue = document.getElementById("budgetValue");
+  var updateBudget = function () {
+    var v = parseInt(budget.value, 10);
+    budgetValue.textContent = v >= 3000 ? "$3000+" : ("$" + v);
+  };
+  budget.addEventListener("input", updateBudget);
+  updateBudget();
+
+  document.getElementById("submitBtn").addEventListener("click", function () {
+    var ratings = Array.from(document.querySelectorAll(".rating")).map(function (s) {
+      return s.dataset.name + ": " + s.value + "/10";
+    });
+    var age = document.getElementById("age").value || "(not given)";
+    var location = document.getElementById("location").value || "(not given)";
+    var genre = document.getElementById("genre").value || "(not given)";
+    var budgetVal = budgetValue.textContent;
+
+    var list = document.getElementById("confirmationList");
+    list.innerHTML = "";
+    var rows = [
+      ["Age", age],
+      ["Location", location],
+      ["Willing to spend", budgetVal],
+      ["Favorite music", genre],
+      ["Festival ratings", ratings.join(", ")]
+    ];
+    rows.forEach(function (row) {
+      var dt = document.createElement("dt");
+      dt.textContent = row[0];
+      var dd = document.createElement("dd");
+      dd.textContent = row[1];
+      list.appendChild(dt);
+      list.appendChild(dd);
+    });
+
+    var box = document.getElementById("confirmation");
+    box.style.display = "block";
+    box.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  });
+})();
+</script>
 
 </body>
-
 </html>

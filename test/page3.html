@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gear — test.shekarkrishnamoorthy.com</title>
+<style>
+  :root {
+    --bg: #0d0221; --card: #1c1042; --text: #f4f0ff; --muted: #b7a9e0;
+    --accent: #ff2ecb; --accent2: #22e5ff; --border: #3a2a6e;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; display: flex; flex-direction: column;
+    font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: radial-gradient(circle at 20% -10%, #33146b 0%, var(--bg) 55%);
+    color: var(--text);
+  }
+  nav.top {
+    position: sticky; top: 0; z-index: 10;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 1rem 1.5rem; background: rgba(13, 2, 33, 0.85);
+    backdrop-filter: blur(8px); border-bottom: 1px solid var(--border);
+  }
+  nav.top .brand {
+    font-weight: 800; font-size: 1.1rem;
+    background: linear-gradient(90deg, var(--accent), var(--accent2));
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  nav.top ul { list-style: none; display: flex; gap: 0.5rem; margin: 0; padding: 0; }
+  nav.top a {
+    display: inline-block; text-decoration: none; color: var(--text);
+    font-size: 0.9rem; font-weight: 600; padding: 0.5rem 0.9rem; border-radius: 8px;
+  }
+  nav.top a:hover { background: rgba(255,255,255,0.08); }
+  nav.top a.active { background: linear-gradient(90deg, var(--accent), var(--accent2)); color: #10041f; }
+  main { flex: 1; display: flex; align-items: center; justify-content: center; text-align: center; padding: 2rem; }
+  main div { max-width: 420px; }
+  h1 { font-size: 2rem; margin-bottom: 0.5rem; }
+  p { color: var(--muted); }
+  a.back { color: var(--accent2); }
+</style>
+</head>
+<body>
+<nav class="top">
+  <span class="brand">FESTIVAL PULSE</span>
+  <ul>
+    <li><a href="/index.html">Festivals</a></li>
+    <li><a href="/page2.html">Lineups</a></li>
+    <li><a href="/page3.html" class="active">Gear</a></li>
+  </ul>
+</nav>
+<main>
+  <div>
+    <h1>Gear</h1>
+    <p>Coming soon.</p>
+    <a class="back" href="/index.html">&larr; Back to Festivals</a>
+  </div>
+</main>
+</body>
+</html>
