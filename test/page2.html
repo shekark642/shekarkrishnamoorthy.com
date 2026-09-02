@@ -3,19 +3,21 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Lineups — test.shekarkrishnamoorthy.com</title>
+<title>Industry — test.shekarkrishnamoorthy.com</title>
 <style>
   :root {
     --bg: #0d0221; --card: #1c1042; --text: #f4f0ff; --muted: #b7a9e0;
-    --accent: #ff2ecb; --accent2: #22e5ff; --border: #3a2a6e;
+    --accent: #ff2ecb; --accent2: #22e5ff; --accent3: #ffd23f; --border: #3a2a6e;
   }
   * { box-sizing: border-box; }
   body {
-    margin: 0; min-height: 100vh; display: flex; flex-direction: column;
+    margin: 0;
     font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     background: radial-gradient(circle at 20% -10%, #33146b 0%, var(--bg) 55%);
     color: var(--text);
   }
+  a { color: var(--accent2); }
+
   nav.top {
     position: sticky; top: 0; z-index: 10;
     display: flex; align-items: center; justify-content: space-between;
@@ -34,11 +36,43 @@
   }
   nav.top a:hover { background: rgba(255,255,255,0.08); }
   nav.top a.active { background: linear-gradient(90deg, var(--accent), var(--accent2)); color: #10041f; }
-  main { flex: 1; display: flex; align-items: center; justify-content: center; text-align: center; padding: 2rem; }
-  main div { max-width: 420px; }
-  h1 { font-size: 2rem; margin-bottom: 0.5rem; }
-  p { color: var(--muted); }
-  a.back { color: var(--accent2); }
+
+  main { max-width: 1000px; margin: 0 auto; padding: 0 1.5rem 5rem; }
+
+  .hero { text-align: center; padding: 3rem 1rem 2rem; }
+  .hero h1 {
+    font-size: clamp(1.9rem, 5vw, 2.8rem); margin: 0 0 0.6rem;
+    background: linear-gradient(90deg, var(--accent3), var(--accent), var(--accent2));
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .hero p { color: var(--muted); max-width: 620px; margin: 0 auto; }
+
+  section.industry { margin-top: 2.5rem; }
+  section.industry h2 {
+    font-size: 1.3rem; margin-bottom: 0.3rem; display: flex; align-items: center; gap: 0.6rem;
+  }
+  section.industry .tag {
+    font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.08em;
+    padding: 0.15rem 0.55rem; border-radius: 999px; font-weight: 700;
+  }
+  section.industry p.blurb { color: var(--muted); margin-top: 0; margin-bottom: 1.1rem; font-size: 0.92rem; }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 1rem; }
+  .card {
+    background: var(--card); border: 1px solid var(--border); border-radius: 14px;
+    padding: 1.1rem 1.2rem;
+  }
+  .card h3 { margin: 0 0 0.35rem; font-size: 1rem; }
+  .card p { margin: 0; color: var(--muted); font-size: 0.85rem; line-height: 1.45; }
+
+  .tag.software { background: rgba(255,46,203,0.18); color: #ff8fe1; }
+  .tag.lights { background: rgba(34,229,255,0.18); color: #7be9ff; }
+  .tag.audio { background: rgba(255,210,63,0.18); color: #ffe58a; }
+  .tag.stage { background: rgba(124,255,107,0.18); color: #9dffb0; }
+  .tag.performers { background: rgba(255,94,58,0.18); color: #ffab8f; }
+  .tag.tech { background: rgba(124,111,255,0.18); color: #b8afff; }
+
+  footer { text-align: center; color: var(--muted); font-size: 0.8rem; padding: 2rem 1rem; }
 </style>
 </head>
 <body>
@@ -46,16 +80,94 @@
   <span class="brand">FESTIVAL PULSE</span>
   <ul>
     <li><a href="/index.html">Festivals</a></li>
-    <li><a href="/page2.html" class="active">Lineups</a></li>
+    <li><a href="/page2.html" class="active">Industry</a></li>
     <li><a href="/page3.html">Gear</a></li>
   </ul>
 </nav>
+
 <main>
-  <div>
-    <h1>Lineups</h1>
-    <p>Coming soon.</p>
-    <a class="back" href="/index.html">&larr; Back to Festivals</a>
-  </div>
+  <section class="hero">
+    <h1>The Industry Behind the Rave</h1>
+    <p>A massive production stack runs underneath every mainstage moment. Here's who builds it.</p>
+  </section>
+
+  <section class="industry">
+    <h2>Show &amp; Lighting Software <span class="tag software">Software</span></h2>
+    <p class="blurb">What programmers and VJs actually run the show with.</p>
+    <div class="grid">
+      <div class="card"><h3>MA Lighting (grandMA)</h3><p>The dominant lighting console/software platform on major touring and festival mainstages worldwide.</p></div>
+      <div class="card"><h3>Resolume</h3><p>Industry-standard VJ software for real-time video mixing and projection mapping.</p></div>
+      <div class="card"><h3>TouchDesigner</h3><p>Node-based visual programming used to build the generative, audio-reactive visuals behind many headline sets.</p></div>
+      <div class="card"><h3>Avolites</h3><p>A long-standing rival lighting control platform, common across European festival circuits.</p></div>
+      <div class="card"><h3>Pangolin (QuickShow/FB4)</h3><p>The go-to software/hardware combo for laser show programming.</p></div>
+      <div class="card"><h3>disguise (d3)</h3><p>Media servers that drive massive LED walls and synchronize video with lighting and show control.</p></div>
+    </div>
+  </section>
+
+  <section class="industry">
+    <h2>Lighting &amp; Visual Fixtures <span class="tag lights">Hardware</span></h2>
+    <p class="blurb">The moving heads, beams, and panels that actually paint the sky.</p>
+    <div class="grid">
+      <div class="card"><h3>Claypaky</h3><p>Italian manufacturer behind many of the moving-head fixtures seen on the largest festival mainstages.</p></div>
+      <div class="card"><h3>Robe Lighting</h3><p>Czech fixture maker with a huge footprint in touring and festival production.</p></div>
+      <div class="card"><h3>GLP</h3><p>Known for compact, high-output LED moving fixtures used in dense mainstage rigs.</p></div>
+      <div class="card"><h3>Ayrton</h3><p>French manufacturer of high-performance beam and wash fixtures.</p></div>
+      <div class="card"><h3>Chauvet Professional</h3><p>One of the largest lighting manufacturers globally, from club rigs up to festival scale.</p></div>
+      <div class="card"><h3>Elation Professional</h3><p>Another major fixture maker spanning club, touring, and festival markets.</p></div>
+    </div>
+  </section>
+
+  <section class="industry">
+    <h2>Sound &amp; Audio Systems <span class="tag audio">Audio</span></h2>
+    <p class="blurb">The line arrays and subs that make a festival mainstage physically hit.</p>
+    <div class="grid">
+      <div class="card"><h3>L-Acoustics</h3><p>The K1/K2 line array systems are a fixture of major festival mainstages worldwide.</p></div>
+      <div class="card"><h3>d&amp;b audiotechnik</h3><p>German manufacturer whose GSL/KSL systems are a common alternative to L-Acoustics at large events.</p></div>
+      <div class="card"><h3>Meyer Sound</h3><p>Long-established high-end line array and subwoofer systems used across touring and festivals.</p></div>
+      <div class="card"><h3>Funktion-One</h3><p>British system renowned in the dance music world specifically for its sound character.</p></div>
+      <div class="card"><h3>Void Acoustics</h3><p>Another prominent system in club and festival dance-music installs.</p></div>
+      <div class="card"><h3>Clair Global</h3><p>One of the largest touring audio production companies, providing systems and crews for major festivals.</p></div>
+    </div>
+  </section>
+
+  <section class="industry">
+    <h2>Stage Design &amp; Construction <span class="tag stage">Stage</span></h2>
+    <p class="blurb">The structures the whole show gets built on.</p>
+    <div class="grid">
+      <div class="card"><h3>TAIT</h3><p>Builds some of the largest kinetic and structural mainstages in the industry, including major EDM festival stages.</p></div>
+      <div class="card"><h3>Stageco</h3><p>Belgian stage construction company with a long history building large-scale touring and festival stages.</p></div>
+      <div class="card"><h3>All Access Staging &amp; Productions</h3><p>US-based staging and rigging company serving major festivals and tours.</p></div>
+      <div class="card"><h3>Brilliant Stages</h3><p>UK stage design and fabrication house known for elaborate custom mainstage builds.</p></div>
+    </div>
+  </section>
+
+  <section class="industry">
+    <h2>Notable Performers <span class="tag performers">Artists</span></h2>
+    <p class="blurb">Artists commonly associated with mainstage headline slots across the festival circuit &mdash; not a claim about any specific lineup.</p>
+    <div class="grid">
+      <div class="card"><h3>Ti&euml;sto</h3><p>One of the genre's most recognizable global headliners.</p></div>
+      <div class="card"><h3>Martin Garrix</h3><p>Regularly headlines mainstages at the largest festivals worldwide.</p></div>
+      <div class="card"><h3>Carl Cox</h3><p>A veteran of the techno/house scene with decades of festival headline sets.</p></div>
+      <div class="card"><h3>Charlotte de Witte</h3><p>A leading figure in modern techno's festival-mainstage era.</p></div>
+      <div class="card"><h3>Above &amp; Beyond</h3><p>Long-running trance act known for large-scale, emotionally driven festival sets.</p></div>
+      <div class="card"><h3>Eric Prydz</h3><p>Known for the elaborate HOLO stage production built around his sets.</p></div>
+    </div>
+  </section>
+
+  <section class="industry">
+    <h2>Production Tech &amp; Cool Stuff <span class="tag tech">Tech</span></h2>
+    <p class="blurb">The extra layer that turns a big stage into a spectacle.</p>
+    <div class="grid">
+      <div class="card"><h3>CO2 &amp; Pyro Cannons</h3><p>Vendors like Le Maitre supply the CO2 jets, confetti, and pyrotechnics timed to drops.</p></div>
+      <div class="card"><h3>LED Video Walls</h3><p>Fine-pitch LED panels (e.g. from ROE Visual) form the massive backdrop screens behind DJs.</p></div>
+      <div class="card"><h3>Drone Light Shows</h3><p>Companies like Verge Aero choreograph swarms of drones as an alternative to fireworks.</p></div>
+      <div class="card"><h3>RFID Wristbands</h3><p>Cashless-payment and access-control wristband tech (e.g. Intellitix) used for festival entry and purchases.</p></div>
+      <div class="card"><h3>Kinetic Stage Structures</h3><p>Motorized stage elements that move, rotate, or transform mid-show.</p></div>
+      <div class="card"><h3>Custom Trussing</h3><p>The engineered aluminum rigging that every light, speaker, and screen actually hangs from.</p></div>
+    </div>
+  </section>
+
+  <footer>Shekar Krishnamoorthy &mdash; test.shekarkrishnamoorthy.com</footer>
 </main>
 </body>
 </html>
