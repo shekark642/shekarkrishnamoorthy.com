@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HW3 Module 10 — Command Queue Loader Demo</title>
+<style>
+  body {
+    margin: 0; min-height: 100vh;
+    font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: #f8fafc; color: #0f172a; padding: 2.5rem 1.5rem;
+  }
+  main { max-width: 680px; margin: 0 auto; }
+  .card {
+    background: #fff; border: 1px solid #dbe3ee; border-radius: 16px; padding: 1.75rem 2rem;
+    margin-bottom: 1.5rem;
+  }
+  h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
+  h2 { font-size: 1.05rem; margin-top: 0; }
+  p { color: #475569; line-height: 1.5; }
+  code, pre.snippet { background: #0f172a; color: #e2e8f0; }
+  code { padding: 0.1rem 0.4rem; border-radius: 4px; font-size: 0.85rem; }
+  pre.snippet { padding: 1rem 1.2rem; border-radius: 10px; font-size: 0.78rem; overflow-x: auto; margin: 0.8rem 0 0; }
+
+  .kv { font-size: 0.85rem; font-family: ui-monospace, Consolas, monospace; color: #334155; margin: 0.3rem 0; }
+  button.demo-btn {
+    border: none; border-radius: 8px; padding: 0.6rem 1rem; margin-top: 0.8rem;
+    background: #0284c7; color: #fff; font-weight: 600; cursor: pointer; font-size: 0.85rem;
+  }
+  button.demo-btn:hover { background: #0369a1; }
+
+  #timeline { list-style: none; margin: 1rem 0 0; padding: 0; font-size: 0.82rem; }
+  #timeline li { border-left: 3px solid #0284c7; padding: 0.3rem 0 0.3rem 0.8rem; margin-bottom: 0.4rem; }
+  #timeline li .t { color: #94a3b8; font-family: ui-monospace, Consolas, monospace; margin-right: 0.5rem; }
+
+  a.back { color: #0284c7; display: inline-block; }
+</style>
+</head>
+<body>
+<main>
+  <div class="card">
+    <h1>HW3 &mdash; Module 10: Command Queue Loader Demo</h1>
+    <p>This page loads <code>collector-v9.js</code> with the <code>async</code> attribute and uses the production embed-snippet pattern: commands are pushed to a plain array (<code>window._cq</code>) before the script has even started downloading. Once the script loads, it drains that queue and replaces the array with a live object &mdash; any <code>_cq.push()</code> made afterward runs immediately.</p>
+    <pre class="snippet">&lt;script&gt;
+  window._cq = window._cq || [];
+  _cq.push(['init', { endpoint: '/collect', debug: true, detectBots: false, respectConsent: false }]);
+  _cq.push(['set', 'loadedVia', 'command-queue']);
+  _cq.push(['track', 'queued_before_load']);
+&lt;/script&gt;
+&lt;script async src="/collector-v9.js"&gt;&lt;/script&gt;</pre>
+    <p style="margin-top:0.8rem">Gates are disabled here on purpose &mdash; this page exists to demonstrate the queue mechanic itself, not the consent/bot gates (see <a href="/test-v9.html">test-v9.html</a> for that). Debug mode is on so every command logs to the console instead of hitting the network.</p>
+  </div>
+
+  <div class="card">
+    <h2>Live Timeline</h2>
+    <div class="kv">typeof window._cq right now: <span id="cqType"></span></div>
+    <div class="btn-row">
+      <button class="demo-btn" id="btnLatePush">_cq.push(['track', 'clicked_after_load']) &mdash; via the live proxy</button>
+    </div>
+    <ul id="timeline"></ul>
+  </div>
+
+  <a class="back" href="/index.html">&larr; Back to collector home</a>
+</main>
+
+<script>
+(function () {
+  "use strict";
+  var t0 = performance.now();
+  var timelineEl = document.getElementById("timeline");
+
+  function logEvent(label) {
+    var li = document.createElement("li");
+    li.innerHTML = '<span class="t">+' + (performance.now() - t0).toFixed(1) + 'ms</span>' + label;
+    timelineEl.appendChild(li);
+  }
+
+  logEvent("Inline script running - window._cq does not exist yet.");
+
+  // The embed snippet: queue commands before collector-v9.js has even
+  // started downloading. window._cq is a plain array until the script
+  // processes it.
+  window._cq = window._cq || [];
+  _cq.push(['init', { endpoint: '/collect', debug: true, detectBots: false, respectConsent: false }]);
+  _cq.push(['set', 'loadedVia', 'command-queue']);
+  _cq.push(['track', 'queued_before_load']);
+
+  logEvent("Pushed 3 commands into window._cq (plain array, length " + window._cq.length + ").");
+
+  window.addEventListener("collector-v9:sent", function (e) {
+    logEvent("collector-v9:sent fired - type: <strong>" + e.detail.payload.type + "</strong>");
+  });
+
+  document.getElementById("btnLatePush").addEventListener("click", function () {
+    var wasArray = Array.isArray(window._cq);
+    _cq.push(['track', 'clicked_after_load']);
+    logEvent("_cq.push() called - window._cq was " + (wasArray ? "still a plain array" : "already the live proxy") + " at that moment.");
+    document.getElementById("cqType").textContent = Array.isArray(window._cq) ? "array (queued)" : "object (live proxy - script has loaded)";
+  });
+
+  // Poll briefly to catch the exact moment the array becomes the live proxy.
+  var pollCount = 0;
+  var poll = setInterval(function () {
+    document.getElementById("cqType").textContent = Array.isArray(window._cq) ? "array (queued)" : "object (live proxy - script has loaded)";
+    if (!Array.isArray(window._cq)) {
+      logEvent("window._cq flipped from array to live proxy object - collector-v9.js has finished loading and drained the queue.");
+      clearInterval(poll);
+    }
+    if (++pollCount > 200) clearInterval(poll); // 20s safety cap
+  }, 100);
+})();
+</script>
+<script async src="/collector-v9.js"></script>
+</body>
+</html>

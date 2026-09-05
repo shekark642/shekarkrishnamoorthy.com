@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HW3 Module 10 — Production Readiness Test</title>
+<style>
+  body {
+    margin: 0; min-height: 100vh;
+    font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: #f8fafc; color: #0f172a; padding: 2.5rem 1.5rem 6rem;
+  }
+  main { max-width: 720px; margin: 0 auto; }
+  .card {
+    background: #fff; border: 1px solid #dbe3ee; border-radius: 16px; padding: 1.75rem 2rem;
+    margin-bottom: 1.5rem;
+  }
+  h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
+  h2 { font-size: 1.05rem; margin-top: 0; }
+  p { color: #475569; line-height: 1.5; }
+  code { background: #eef2f7; padding: 0.1rem 0.4rem; border-radius: 4px; }
+
+  .btn-row { display: flex; flex-wrap: wrap; gap: 0.6rem; margin-top: 0.8rem; }
+  button.demo-btn {
+    border: none; border-radius: 8px; padding: 0.6rem 1rem;
+    background: #0284c7; color: #fff; font-weight: 600; cursor: pointer; font-size: 0.85rem;
+  }
+  button.demo-btn:hover { background: #0369a1; }
+  button.demo-btn.pink { background: #db2777; }
+  button.demo-btn.pink:hover { background: #be185d; }
+  button.demo-btn.amber { background: #d97706; }
+  button.demo-btn.amber:hover { background: #b45309; }
+
+  .note {
+    font-size: 0.82rem; background: #fff7ed; border: 1px solid #fed7aa; color: #9a3412;
+    border-radius: 8px; padding: 0.6rem 0.9rem; margin-top: 0.7rem;
+  }
+  #status { font-size: 0.85rem; padding: 0.6rem 0.9rem; border-radius: 8px; background: #f0f9ff; border: 1px solid #bae6fd; color: #075985; margin-top: 0.8rem; }
+  .kv { font-size: 0.85rem; font-family: ui-monospace, Consolas, monospace; color: #334155; margin: 0.3rem 0; }
+
+  #sentLog { list-style: none; margin: 1rem 0 0; padding: 0; font-size: 0.78rem; max-height: 320px; overflow-y: auto; }
+  #sentLog li { border: 1px solid #dbe3ee; border-radius: 8px; padding: 0.55rem 0.75rem; margin-bottom: 0.5rem; }
+  #sentLog .tag { display: inline-block; font-size: 0.66rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; padding: 0.1rem 0.45rem; border-radius: 999px; margin-right: 0.4rem; background: #dcfce7; color: #15803d; }
+  #sentLog pre { margin: 0.35rem 0 0; white-space: pre-wrap; word-break: break-word; }
+  #emptyLog { color: #94a3b8; font-style: italic; }
+
+  a.back { color: #0284c7; display: inline-block; }
+</style>
+</head>
+<body>
+<main>
+  <div class="card">
+    <h1>HW3 &mdash; Module 10: Production Readiness</h1>
+    <p>This page loads <code>collector-v9.js</code>, which adds three init-time gates &mdash; consent, bot detection, sampling &mdash; plus a retry queue, accurate time-on-page, and self-measurement via <code>performance.mark()</code>.</p>
+  </div>
+
+  <div class="card">
+    <h2>1. Consent</h2>
+    <div class="kv">ConsentManager.check(): <span id="consentVal"></span></div>
+    <div class="btn-row">
+      <button class="demo-btn" id="btnResetConsent">Reset consent (clear cookie) &amp; reload</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>2. Initialize collector (real embed-snippet path)</h2>
+    <div class="kv">navigator.webdriver: <span id="webdriverVal"></span></div>
+    <p>On page load this calls <code>collector.init({ endpoint: '/collect' })</code> exactly like a real embed snippet would &mdash; consent, then bot detection, then sampling, checked in order.</p>
+    <div class="note">This test runs inside an automation-controlled browser, so <code>navigator.webdriver</code> is <code>true</code> and the real bot gate above correctly refuses to initialize &mdash; that's the feature working as designed, not a bug. Use the button below only to bypass both gates so the rest of the pipeline (timing, vitals, errors, retry queue, time-on-page) can still be verified end-to-end.</div>
+    <div class="btn-row">
+      <button class="demo-btn amber" id="btnForceInit">Force init for verification (bypass consent + bot gates)</button>
+    </div>
+    <div id="status">Waiting for collector.init()...</div>
+  </div>
+
+  <div class="card">
+    <h2>3. Track events</h2>
+    <div class="btn-row">
+      <button class="demo-btn pink" id="btnTrack">track('demo_event', {...})</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>4. Retry queue</h2>
+    <p>Seeds a fake failed beacon directly into <code>sessionStorage['_collector_retry']</code>, then reloads. On the next <code>init()</code>, <code>processRetryQueue()</code> should drain it and actually send it &mdash; watch for a <code>retry_test_seed</code> entry in the Live Sent Log below after reload.</p>
+    <div class="btn-row">
+      <button class="demo-btn" id="btnSeedRetry">Seed a fake failed beacon + reload</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>5. Time on page</h2>
+    <p>Switching tabs or navigating away fires a <code>page_exit</code> beacon with accumulated visible time (not wall-clock time) &mdash; it will appear in the Live Sent Log if this page is still initialized when you leave.</p>
+  </div>
+
+  <div class="card">
+    <h2>6. Self-measurement</h2>
+    <div class="btn-row">
+      <button class="demo-btn" id="btnShowMeasure">Show collector_send / collector_init durations</button>
+    </div>
+    <div id="measureOutput" class="kv"></div>
+  </div>
+
+  <div class="card">
+    <h2>Live Sent Log</h2>
+    <p id="emptyLog">Nothing sent yet.</p>
+    <ul id="sentLog"></ul>
+  </div>
+
+  <a class="back" href="/index.html">&larr; Back to collector home</a>
+</main>
+
+<script src="/collector-v9.js"></script>
+<script src="/consent.js"></script>
+<script>
+(function () {
+  "use strict";
+
+  document.getElementById("consentVal").textContent = ConsentManager.check();
+  document.getElementById("webdriverVal").textContent = navigator.webdriver === true;
+
+  var hasConsentCookie = document.cookie.indexOf("analytics_consent=") !== -1;
+  if (!hasConsentCookie) {
+    ConsentManager.showBanner({
+      onAccept: function () { location.reload(); },
+      onDecline: function () { location.reload(); }
+    });
+  }
+
+  var statusEl = document.getElementById("status");
+  var logEl = document.getElementById("sentLog");
+  var emptyLog = document.getElementById("emptyLog");
+
+  window.addEventListener("collector-v9:sent", function (e) {
+    emptyLog.style.display = "none";
+    var payload = e.detail.payload;
+    var li = document.createElement("li");
+    li.innerHTML =
+      '<span class="tag">sent</span><strong>' + payload.type + '</strong>' +
+      '<pre>' + JSON.stringify(payload, null, 2).replace(/</g, "&lt;") + '</pre>';
+    logEl.insertBefore(li, logEl.firstChild);
+  });
+
+  // Test-harness-only flag (not part of collector-v9.js): lets the retry
+  // queue demo below survive a reload with the verification gates already
+  // bypassed, so processRetryQueue() actually runs against the seeded entry.
+  var forceInit = sessionStorage.getItem("_test_force_init") === "true";
+
+  collector.init(forceInit
+    ? { endpoint: "/collect", debug: false, detectBots: false, respectConsent: false }
+    : { endpoint: "/collect", debug: false }
+  );
+  statusEl.textContent = forceInit
+    ? "Initialized with gates bypassed (forced verification mode - see note above)."
+    : "init() called with real gates. Check the console: if consent isn't granted or this browser is detected as a bot, the collector logs why and stays inactive.";
+
+  document.getElementById("btnResetConsent").addEventListener("click", function () {
+    document.cookie = "analytics_consent=; path=/; max-age=0";
+    sessionStorage.removeItem("_test_force_init");
+    location.reload();
+  });
+
+  document.getElementById("btnForceInit").addEventListener("click", function () {
+    sessionStorage.setItem("_test_force_init", "true");
+    collector.init({ endpoint: "/collect", debug: false, detectBots: false, respectConsent: false });
+    statusEl.textContent = "Force-initialized (bypassing consent + bot gates) for verification.";
+  });
+
+  document.getElementById("btnTrack").addEventListener("click", function () {
+    collector.track("demo_event", { source: "module-10-test-page" });
+  });
+
+  document.getElementById("btnSeedRetry").addEventListener("click", function () {
+    var fakeBeacon = {
+      url: window.location.href,
+      title: document.title,
+      timestamp: new Date().toISOString(),
+      type: "retry_test_seed",
+      session: "seeded-manually"
+    };
+    sessionStorage.setItem("_collector_retry", JSON.stringify([fakeBeacon]));
+    sessionStorage.setItem("_test_force_init", "true");
+    location.reload();
+  });
+
+  document.getElementById("btnShowMeasure").addEventListener("click", function () {
+    var sendMeasures = performance.getEntriesByName("collector_send");
+    var initMeasures = performance.getEntriesByName("collector_init");
+    var lines = [];
+    if (sendMeasures.length) {
+      var lastSend = sendMeasures[sendMeasures.length - 1];
+      lines.push("collector_send: " + lastSend.duration.toFixed(3) + " ms (last of " + sendMeasures.length + ")");
+    } else {
+      lines.push("collector_send: no measures yet - send a track() event first");
+    }
+    if (initMeasures.length) {
+      lines.push("collector_init: " + initMeasures[0].duration.toFixed(3) + " ms");
+    } else {
+      lines.push("collector_init: no measure yet - collector.init() was blocked by a gate");
+    }
+    document.getElementById("measureOutput").textContent = lines.join(" | ");
+  });
+})();
+</script>
+</body>
+</html>
