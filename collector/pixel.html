@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HW3 Module 03 — Server-Log Collection Test</title>
+<style>
+  body {
+    margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: #f8fafc; color: #0f172a;
+  }
+  main {
+    max-width: 480px; text-align: center; background: #fff; border: 1px solid #dbe3ee;
+    border-radius: 16px; padding: 2.5rem;
+  }
+  h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
+  p { color: #475569; }
+  code { background: #eef2f7; padding: 0.1rem 0.4rem; border-radius: 4px; }
+  a.back { color: #0284c7; display: inline-block; margin-top: 1.5rem; }
+</style>
+</head>
+<body>
+<main>
+  <h1>HW3 &mdash; Module 03: Server-Log Collection</h1>
+  <p>No custom JavaScript on this page. A 1x1 tracking pixel below triggers <code>tracking-pixel.php</code>, which serves a transparent GIF and logs the request server-side &mdash; IP, User-Agent, referer, and query params.</p>
+  <p>Open DevTools &rarr; Network tab and look for the request to <code>tracking-pixel.php</code>.</p>
+  <a class="back" href="/index.html">&larr; Back to collector home</a>
+</main>
+
+<!-- Tracking pixel: invisible, off-screen, no layout impact -->
+<img src="/tracking-pixel.php?page=/pixel.html&t=pageview"
+     width="1" height="1" alt="" style="position:absolute;left:-9999px">
+
+<!-- noscript fallback: the only analytics method that works with JS fully disabled -->
+<noscript>
+  <img src="/tracking-pixel.php?page=/pixel.html&js=0" width="1" height="1" alt="">
+</noscript>
+</body>
+</html>
