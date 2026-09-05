@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HW3 Module 02 — Technographics Test</title>
+<style>
+  body {
+    margin: 0; min-height: 100vh;
+    font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: #f8fafc; color: #0f172a; padding: 2.5rem 1.5rem;
+  }
+  main { max-width: 640px; margin: 0 auto; }
+  .card {
+    background: #fff; border: 1px solid #dbe3ee; border-radius: 16px; padding: 2rem;
+  }
+  h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
+  p { color: #475569; }
+  code { background: #eef2f7; padding: 0.1rem 0.4rem; border-radius: 4px; }
+  table { width: 100%; border-collapse: collapse; margin-top: 1.2rem; font-size: 0.9rem; }
+  th, td { text-align: left; padding: 0.5rem 0.6rem; border-bottom: 1px solid #eef2f7; vertical-align: top; }
+  th { color: #475569; font-weight: 600; width: 40%; }
+  td { font-family: ui-monospace, Consolas, monospace; word-break: break-word; }
+  a.back { color: #0284c7; display: inline-block; margin-top: 1.5rem; }
+</style>
+</head>
+<body>
+<main>
+  <div class="card">
+    <h1>HW3 &mdash; Module 02: Technographics</h1>
+    <p>This page loads <code>collector-v2.js</code>, which fires the same beacon as Module 01 but now attaches a session ID and full technographic profile. The table below shows exactly what was collected, read back from the collector itself &mdash; no second network request.</p>
+    <table id="techTable"></table>
+  </div>
+  <a class="back" href="/index.html">&larr; Back to collector home</a>
+</main>
+
+<script src="/collector-v2.js"></script>
+<script>
+(function () {
+  "use strict";
+
+  function flatten(obj, prefix) {
+    var rows = [];
+    Object.keys(obj).forEach(function (key) {
+      var value = obj[key];
+      var label = prefix ? prefix + "." + key : key;
+      if (value && typeof value === "object" && !Array.isArray(value)) {
+        rows = rows.concat(flatten(value, label));
+      } else {
+        rows.push([label, String(value)]);
+      }
+    });
+    return rows;
+  }
+
+  window.addEventListener("load", function () {
+    var tech = window.collectorV2.getTechnographics();
+    var sessionId = window.collectorV2.getSessionId();
+    var rows = [["session", sessionId]].concat(flatten(tech, ""));
+
+    var table = document.getElementById("techTable");
+    rows.forEach(function (row) {
+      var tr = document.createElement("tr");
+      var th = document.createElement("th");
+      th.textContent = row[0];
+      var td = document.createElement("td");
+      td.textContent = row[1];
+      tr.appendChild(th);
+      tr.appendChild(td);
+      table.appendChild(tr);
+    });
+  });
+})();
+</script>
+</body>
+</html>
