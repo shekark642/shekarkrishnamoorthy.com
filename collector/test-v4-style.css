@@ -1,0 +1,10 @@
+/* test-v4-style.css - a separate stylesheet so it shows up as its own
+   Resource Timing entry (initiatorType: "link") for HW3 Module 05. */
+.timing-demo-box {
+  display: inline-block;
+  width: 60px;
+  height: 60px;
+  margin: 0.4rem;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #0284c7, #db2777);
+}

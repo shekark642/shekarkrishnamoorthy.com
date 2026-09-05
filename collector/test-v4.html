@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HW3 Module 05 — Performance Timing Test</title>
+<link rel="stylesheet" href="/test-v4-style.css">
+<style>
+  body {
+    margin: 0; min-height: 100vh;
+    font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: #f8fafc; color: #0f172a; padding: 2.5rem 1.5rem;
+  }
+  main { max-width: 680px; margin: 0 auto; }
+  .card {
+    background: #fff; border: 1px solid #dbe3ee; border-radius: 16px; padding: 2rem;
+    margin-bottom: 1.5rem;
+  }
+  h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
+  h2 { font-size: 1.05rem; }
+  p { color: #475569; }
+  code { background: #eef2f7; padding: 0.1rem 0.4rem; border-radius: 4px; }
+  table { width: 100%; border-collapse: collapse; margin-top: 1rem; font-size: 0.9rem; }
+  th, td { text-align: left; padding: 0.45rem 0.6rem; border-bottom: 1px solid #eef2f7; }
+  th { color: #475569; font-weight: 600; }
+  td.num { font-family: ui-monospace, Consolas, monospace; text-align: right; }
+  .bar-row { display: flex; align-items: center; gap: 0.6rem; margin: 0.3rem 0; font-size: 0.85rem; }
+  .bar-label { width: 110px; color: #475569; }
+  .bar-track { flex: 1; background: #eef2f7; border-radius: 4px; height: 10px; overflow: hidden; }
+  .bar-fill { height: 100%; background: linear-gradient(90deg, #0284c7, #db2777); }
+  .bar-value { width: 70px; text-align: right; font-family: ui-monospace, Consolas, monospace; }
+  a.back { color: #0284c7; display: inline-block; }
+  #status { color: #475569; font-style: italic; }
+</style>
+</head>
+<body>
+<main>
+  <div class="card">
+    <h1>HW3 &mdash; Module 05: Performance Timing</h1>
+    <p>This page loads <code>collector-v4.js</code> plus a real CSS file, JS file, and two images, so Resource Timing has something non-trivial to aggregate. Timing data is collected on <code>load</code> (with the required <code>setTimeout(fn, 0)</code>) and displayed below &mdash; read from the exact payload that was sent, not recomputed.</p>
+    <p id="status">Waiting for the load event to finish...</p>
+    <div>
+      <img class="timing-demo-box" src="/test-v4-img1.svg" width="60" height="60" alt="">
+      <img class="timing-demo-box" src="/test-v4-img2.svg" width="60" height="60" alt="">
+      <span class="timing-demo-box"></span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Navigation Timing</h2>
+    <div id="timingBars"></div>
+  </div>
+
+  <div class="card">
+    <h2>Resource Summary</h2>
+    <table id="resourceTable">
+      <thead><tr><th>Type</th><th class="num">Count</th><th class="num">Bytes</th><th class="num">Duration (ms)</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <a class="back" href="/index.html">&larr; Back to collector home</a>
+</main>
+
+<script src="/test-v4-script.js"></script>
+<script src="/collector-v4.js"></script>
+<script>
+(function () {
+  "use strict";
+
+  window.addEventListener("collector-v4:collected", function (e) {
+    var payload = e.detail;
+    var timing = payload.timing;
+    var resources = payload.resources;
+
+    document.getElementById("status").textContent =
+      "Collected and sent - " + resources.totalResources + " resources loaded.";
+
+    var timingOrder = [
+      ["dnsLookup", "DNS Lookup"],
+      ["tcpConnect", "TCP Connect"],
+      ["tlsHandshake", "TLS Handshake"],
+      ["ttfb", "TTFB"],
+      ["download", "Download"],
+      ["domInteractive", "DOM Interactive"],
+      ["domComplete", "DOM Complete"],
+      ["loadEvent", "Load Event"]
+    ];
+    var maxVal = Math.max.apply(null, timingOrder.map(function (row) { return timing[row[0]] || 0; }).concat([1]));
+
+    var barsEl = document.getElementById("timingBars");
+    timingOrder.forEach(function (row) {
+      var val = timing[row[0]] || 0;
+      var pct = Math.min(100, (val / maxVal) * 100);
+      var wrap = document.createElement("div");
+      wrap.className = "bar-row";
+      wrap.innerHTML =
+        '<span class="bar-label">' + row[1] + '</span>' +
+        '<span class="bar-track"><span class="bar-fill" style="width:' + pct + '%"></span></span>' +
+        '<span class="bar-value">' + val + ' ms</span>';
+      barsEl.appendChild(wrap);
+    });
+
+    var extraRow = document.createElement("div");
+    extraRow.className = "bar-row";
+    extraRow.innerHTML =
+      '<span class="bar-label">Transfer Size</span>' +
+      '<span></span>' +
+      '<span class="bar-value">' + timing.transferSize + ' B</span>';
+    barsEl.appendChild(extraRow);
+
+    var tbody = document.querySelector("#resourceTable tbody");
+    Object.keys(resources.byType).forEach(function (type) {
+      var t = resources.byType[type];
+      if (t.count === 0) return;
+      var tr = document.createElement("tr");
+      tr.innerHTML =
+        "<td>" + type + "</td>" +
+        '<td class="num">' + t.count + "</td>" +
+        '<td class="num">' + t.totalSize + "</td>" +
+        '<td class="num">' + Math.round(t.totalDuration * 100) / 100 + "</td>";
+      tbody.appendChild(tr);
+    });
+  });
+})();
+</script>
+</body>
+</html>
