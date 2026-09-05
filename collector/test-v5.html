@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HW3 Module 06 — Web Vitals Test</title>
+<style>
+  body {
+    margin: 0; min-height: 100vh;
+    font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: #f8fafc; color: #0f172a; padding: 2.5rem 1.5rem;
+  }
+  main { max-width: 680px; margin: 0 auto; }
+  .card {
+    background: #fff; border: 1px solid #dbe3ee; border-radius: 16px; padding: 2rem;
+    margin-bottom: 1.5rem;
+  }
+  h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
+  h2 { font-size: 1.05rem; margin-top: 0; }
+  p { color: #475569; }
+  code { background: #eef2f7; padding: 0.1rem 0.4rem; border-radius: 4px; }
+  img.hero { width: 100%; height: auto; border-radius: 12px; display: block; }
+
+  #shiftBanner {
+    display: none; background: #fff7ed; border: 1px solid #fed7aa; color: #9a3412;
+    border-radius: 10px; padding: 0.9rem 1.1rem; margin-bottom: 1rem; font-size: 0.9rem;
+  }
+
+  .vitals-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; }
+  .vital-box { border-radius: 12px; padding: 1rem; text-align: center; border: 1px solid #dbe3ee; }
+  .vital-box .metric { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; color: #475569; }
+  .vital-box .val { font-size: 1.6rem; font-weight: 800; margin: 0.3rem 0; }
+  .vital-box .score { font-size: 0.8rem; font-weight: 600; text-transform: capitalize; }
+  .score-good { color: #15803d; }
+  .score-needsImprovement { color: #b45309; }
+  .score-poor { color: #b91c1c; }
+  .score-unknown { color: #94a3b8; }
+
+  button.demo-btn {
+    margin-top: 1rem; border: none; border-radius: 8px; padding: 0.7rem 1.2rem;
+    background: #0284c7; color: #fff; font-weight: 600; cursor: pointer; font-size: 0.95rem;
+  }
+  button.demo-btn:hover { background: #0369a1; }
+
+  a.back { color: #0284c7; display: inline-block; }
+  .hint { font-size: 0.82rem; color: #475569; }
+</style>
+</head>
+<body>
+<main>
+  <div class="card">
+    <h1>HW3 &mdash; Module 06: Web Vitals</h1>
+    <p>This page loads <code>collector-v5.js</code>, which tracks LCP, CLS, and INP via <code>PerformanceObserver</code> and updates the panel below live. Final values are sent in a separate beacon when you switch tabs or navigate away.</p>
+  </div>
+
+  <div id="shiftBanner">This banner was inserted late on purpose &mdash; it pushes the content below down, causing an unexpected layout shift (counts against CLS).</div>
+
+  <div class="card">
+    <h2>Hero Image (LCP candidate)</h2>
+    <img class="hero" src="/test-v5-hero.svg" width="800" height="280" alt="Large hero graphic">
+  </div>
+
+  <div class="card">
+    <h2>Interact (for INP)</h2>
+    <p class="hint">This button includes a deliberate ~40ms delay so INP has something measurable to show &mdash; a real button click is often too fast to register above the 16ms threshold.</p>
+    <button class="demo-btn" id="interactBtn">Click me</button>
+    <p id="clickCount" class="hint">Clicks: 0</p>
+  </div>
+
+  <div class="card">
+    <h2>Live Web Vitals</h2>
+    <div class="vitals-grid">
+      <div class="vital-box" id="lcpBox">
+        <div class="metric">LCP</div>
+        <div class="val">&mdash;</div>
+        <div class="score score-unknown">waiting</div>
+      </div>
+      <div class="vital-box" id="clsBox">
+        <div class="metric">CLS</div>
+        <div class="val">&mdash;</div>
+        <div class="score score-unknown">waiting</div>
+      </div>
+      <div class="vital-box" id="inpBox">
+        <div class="metric">INP</div>
+        <div class="val">&mdash;</div>
+        <div class="score score-unknown">waiting</div>
+      </div>
+    </div>
+    <p class="hint" style="margin-top:1rem">Switch to another tab (or navigate away) to trigger the final vitals beacon &mdash; check the console for <code>[collector-v5] vitals payload</code>.</p>
+  </div>
+
+  <a class="back" href="/index.html">&larr; Back to collector home</a>
+</main>
+
+<script src="/collector-v5.js"></script>
+<script>
+(function () {
+  "use strict";
+
+  // Deliberate layout shift: insert a banner above existing content after
+  // the page has settled, with no user input involved - this is exactly
+  // the kind of unexpected shift CLS is designed to catch.
+  setTimeout(function () {
+    document.getElementById("shiftBanner").style.display = "block";
+  }, 800);
+
+  var clickCount = 0;
+  document.getElementById("interactBtn").addEventListener("click", function () {
+    // Deliberate small busy-wait so this interaction takes long enough
+    // (>16ms) for the 'event' PerformanceObserver to actually record it.
+    var start = performance.now();
+    while (performance.now() - start < 40) { /* busy wait */ }
+
+    clickCount++;
+    document.getElementById("clickCount").textContent = "Clicks: " + clickCount;
+  });
+
+  function updateBox(id, metric, data) {
+    var box = document.getElementById(id);
+    var valEl = box.querySelector(".val");
+    var scoreEl = box.querySelector(".score");
+    valEl.textContent = data.value + (metric === "cls" ? "" : " ms");
+    var score = data.score || "unknown";
+    scoreEl.textContent = score === "needsImprovement" ? "needs improvement" : score;
+    scoreEl.className = "score score-" + score;
+  }
+
+  window.addEventListener("collector-v5:vitals-update", function (e) {
+    updateBox("lcpBox", "lcp", e.detail.lcp);
+    updateBox("clsBox", "cls", e.detail.cls);
+    updateBox("inpBox", "inp", e.detail.inp);
+  });
+})();
+</script>
+</body>
+</html>
