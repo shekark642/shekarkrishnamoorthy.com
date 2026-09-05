@@ -1,6 +1,8 @@
 const express = require('express');
 const crypto = require('crypto');
 const os = require('os');
+const fs = require('fs');
+const path = require('path');
 
 const app = express();
 
@@ -411,6 +413,53 @@ app.get('/fingerprint-demo/', (req, res) => {
 </script>
 </body>
 </html>`);
+});
+
+// HW3 Module 04: Custom Endpoint. analytics.jsonl lives in this same
+// directory ($CLONE/hw2/nodejs), which deploy-site.sh never syncs into
+// public_html (see its rsync excludes), so it's not web-servable - and it's
+// gitignored so `git clean -fd` on every deploy doesn't wipe accumulated data.
+const ANALYTICS_LOG = path.join(__dirname, 'analytics.jsonl');
+
+// CORS: the collector script can run on a different origin than this
+// endpoint (e.g. embedded on shekarkrishnamoorthy.com, posting here). Applies
+// to any method hitting /collect; OPTIONS (the CORS preflight for JSON
+// fetch() calls) is answered directly, POST falls through to the handler.
+app.use('/collect', (req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type');
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(204);
+  }
+  next();
+});
+
+app.post('/collect', (req, res) => {
+  const payload = req.body;
+
+  if (!payload || typeof payload.url !== 'string' || typeof payload.type !== 'string') {
+    return res.status(400).json({ error: 'Missing required fields: url, type' });
+  }
+
+  const size = Buffer.byteLength(JSON.stringify(payload), 'utf8');
+  if (size > 50 * 1024) {
+    return res.status(413).json({ error: 'Payload too large' });
+  }
+
+  // Server-side timestamp: client clocks can be wrong by minutes or hours.
+  // Keeping both lets you detect clock skew later.
+  payload.serverTimestamp = new Date().toISOString();
+  payload.ip = req.ip;
+
+  const line = JSON.stringify(payload) + '\n';
+  fs.appendFile(ANALYTICS_LOG, line, (err) => {
+    if (err) {
+      console.error('[collect] write error:', err);
+      return res.sendStatus(500);
+    }
+    res.sendStatus(204); // No Content - confirms receipt, nothing to return
+  });
 });
 
 // Body-parser errors (malformed JSON, etc.) land here instead of Express's

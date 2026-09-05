@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HW3 Module 04 — Custom Endpoint Test</title>
+<style>
+  body {
+    margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: #f8fafc; color: #0f172a;
+  }
+  main {
+    max-width: 520px; text-align: center; background: #fff; border: 1px solid #dbe3ee;
+    border-radius: 16px; padding: 2.5rem;
+  }
+  h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
+  p { color: #475569; }
+  ol { text-align: left; color: #475569; font-size: 0.9rem; }
+  code { background: #eef2f7; padding: 0.1rem 0.4rem; border-radius: 4px; }
+  a.back { color: #0284c7; display: inline-block; margin-top: 1.5rem; }
+</style>
+</head>
+<body>
+<main>
+  <h1>HW3 &mdash; Module 04: Custom Endpoint</h1>
+  <p>This page loads <code>collector-v3.js</code>. Unlike Modules 01&ndash;03, <code>/collect</code> now has a real backend &mdash; an Express route added to the existing HW2 Node service &mdash; so the beacon should receive a real <code>204 No Content</code> instead of a 404.</p>
+  <ol>
+    <li>Open DevTools &rarr; Network tab</li>
+    <li>Reload this page</li>
+    <li>Look for <code>POST /collect</code> &mdash; expect status <code>204</code></li>
+  </ol>
+  <a class="back" href="/index.html">&larr; Back to collector home</a>
+</main>
+<script src="/collector-v3.js"></script>
+</body>
+</html>
