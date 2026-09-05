@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HW3 Module 07 — Error Tracking Test</title>
+<style>
+  body {
+    margin: 0; min-height: 100vh;
+    font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: #f8fafc; color: #0f172a; padding: 2.5rem 1.5rem;
+  }
+  main { max-width: 680px; margin: 0 auto; }
+  .card {
+    background: #fff; border: 1px solid #dbe3ee; border-radius: 16px; padding: 2rem;
+    margin-bottom: 1.5rem;
+  }
+  h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
+  h2 { font-size: 1.05rem; margin-top: 0; }
+  p { color: #475569; }
+  code { background: #eef2f7; padding: 0.1rem 0.4rem; border-radius: 4px; }
+
+  .btn-row { display: flex; flex-wrap: wrap; gap: 0.6rem; margin-top: 1rem; }
+  button.demo-btn {
+    border: none; border-radius: 8px; padding: 0.7rem 1.2rem;
+    background: #0284c7; color: #fff; font-weight: 600; cursor: pointer; font-size: 0.9rem;
+  }
+  button.demo-btn:hover { background: #0369a1; }
+  button.demo-btn.danger { background: #db2777; }
+  button.demo-btn.danger:hover { background: #be185d; }
+
+  #errorLog { list-style: none; margin: 1rem 0 0; padding: 0; font-size: 0.85rem; }
+  #errorLog li {
+    border: 1px solid #dbe3ee; border-radius: 8px; padding: 0.7rem 0.9rem;
+    margin-bottom: 0.5rem; background: #fff7ed; border-color: #fed7aa;
+  }
+  #errorLog .err-type {
+    display: inline-block; font-weight: 700; text-transform: uppercase;
+    font-size: 0.7rem; letter-spacing: 0.04em; color: #b91c1c; margin-bottom: 0.2rem;
+  }
+  #errorLog .err-msg { font-family: ui-monospace, Consolas, monospace; word-break: break-word; }
+  #emptyState { color: #94a3b8; font-style: italic; }
+  #broken-img { display: none; }
+
+  a.back { color: #0284c7; display: inline-block; }
+</style>
+</head>
+<body>
+<main>
+  <div class="card">
+    <h1>HW3 &mdash; Module 07: Error Tracking</h1>
+    <p>This page loads <code>collector-v6.js</code>, which listens for uncaught JS errors, unhandled promise rejections, and resource load failures, then deduplicates and rate-limits (max 10) before sending an <code>error</code> beacon. Trigger each type below and watch it appear in the log &mdash; each is also sent to <code>/collect</code>.</p>
+    <div class="btn-row">
+      <button class="demo-btn danger" id="btnJsError">Throw JS Error</button>
+      <button class="demo-btn danger" id="btnPromise">Reject Promise</button>
+      <button class="demo-btn danger" id="btnResource">Load Broken Image</button>
+      <button class="demo-btn" id="btnDupe">Throw Same Error x5 (test dedupe)</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Reported Errors</h2>
+    <p id="emptyState">No errors reported yet &mdash; click a button above.</p>
+    <ul id="errorLog"></ul>
+    <img id="broken-img" src="" alt="intentionally broken">
+  </div>
+
+  <a class="back" href="/index.html">&larr; Back to collector home</a>
+</main>
+
+<script src="/collector-v6.js"></script>
+<script>
+(function () {
+  "use strict";
+
+  var logEl = document.getElementById("errorLog");
+  var emptyState = document.getElementById("emptyState");
+
+  window.addEventListener("collector-v6:error-reported", function (e) {
+    emptyState.style.display = "none";
+    var err = e.detail.error;
+    var li = document.createElement("li");
+    var msg = err.message || (err.tagName ? err.tagName + " failed to load: " + err.src : "");
+    li.innerHTML =
+      '<div class="err-type">' + err.type + '</div>' +
+      '<div class="err-msg">' + msg.replace(/</g, "&lt;") + '</div>';
+    logEl.appendChild(li);
+  });
+
+  document.getElementById("btnJsError").addEventListener("click", function () {
+    // Deliberately reference an undefined variable to trigger a real
+    // uncaught ReferenceError, caught by the window 'error' listener.
+    thisVariableDoesNotExist.someProperty;
+  });
+
+  document.getElementById("btnPromise").addEventListener("click", function () {
+    // A rejected promise with no .catch() - fires 'unhandledrejection'.
+    Promise.reject(new Error("Simulated unhandled rejection"));
+  });
+
+  document.getElementById("btnResource").addEventListener("click", function () {
+    // A 404 image load - fires the capture-phase 'error' resource handler.
+    var img = document.getElementById("broken-img");
+    img.src = "/this-image-does-not-exist-" + Date.now() + ".png";
+  });
+
+  document.getElementById("btnDupe").addEventListener("click", function () {
+    for (var i = 0; i < 5; i++) {
+      try {
+        // Same message/source/line every time - only the first should be
+        // reported, demonstrating the dedupe key in collector-v6.js.
+        null.sameErrorEveryTime();
+      } catch (err) {
+        setTimeout(function () { throw err; }, 0);
+      }
+    }
+  });
+})();
+</script>
+</body>
+</html>
