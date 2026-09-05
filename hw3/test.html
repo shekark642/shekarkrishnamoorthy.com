@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HW3 Module 01 — Hello Beacon Test</title>
+<style>
+  body {
+    margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: #f8fafc; color: #0f172a;
+  }
+  main {
+    max-width: 480px; text-align: center; background: #fff; border: 1px solid #dbe3ee;
+    border-radius: 16px; padding: 2.5rem;
+  }
+  h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
+  p { color: #475569; }
+  ol { text-align: left; color: #475569; font-size: 0.9rem; }
+  a.navlink {
+    display: inline-block; margin-top: 1.5rem; background: #0284c7; color: #fff;
+    text-decoration: none; font-weight: 600; padding: 0.7rem 1.4rem; border-radius: 8px;
+  }
+  a.navlink:hover { background: #0369a1; }
+  code { background: #eef2f7; padding: 0.1rem 0.4rem; border-radius: 4px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>HW3 &mdash; Module 01: Hello Beacon</h1>
+  <p>This page loads <code>collector-v1.js</code>, which fires a <code>navigator.sendBeacon()</code> POST to <code>/collect</code> as soon as the page finishes loading.</p>
+  <ol>
+    <li>Open DevTools &rarr; Network tab</li>
+    <li>Reload this page (or click below)</li>
+    <li>Look for a POST request to <code>/collect</code> &mdash; it will 404 since no server endpoint exists yet (that's Module 04), but the request firing is what matters here</li>
+  </ol>
+  <a class="navlink" href="/hw3/test.html">Navigate Away (reload to re-fire beacon)</a>
+</main>
+<script src="/hw3/collector-v1.js"></script>
+</body>
+</html>
