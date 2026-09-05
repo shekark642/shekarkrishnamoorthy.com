@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HW3 Module 08 — Configuration API Test</title>
+<style>
+  body {
+    margin: 0; min-height: 100vh;
+    font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: #f8fafc; color: #0f172a; padding: 2.5rem 1.5rem;
+  }
+  main { max-width: 720px; margin: 0 auto; }
+  .card {
+    background: #fff; border: 1px solid #dbe3ee; border-radius: 16px; padding: 1.75rem 2rem;
+    margin-bottom: 1.5rem;
+  }
+  h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
+  h2 { font-size: 1.05rem; margin-top: 0; }
+  p { color: #475569; }
+  code { background: #eef2f7; padding: 0.1rem 0.4rem; border-radius: 4px; }
+
+  .field-row { display: flex; align-items: center; gap: 0.6rem; margin: 0.6rem 0; font-size: 0.9rem; }
+  .field-row label { display: flex; align-items: center; gap: 0.4rem; }
+  input[type="number"] { width: 70px; padding: 0.3rem 0.5rem; border: 1px solid #dbe3ee; border-radius: 6px; }
+
+  .btn-row { display: flex; flex-wrap: wrap; gap: 0.6rem; margin-top: 1rem; }
+  button.demo-btn {
+    border: none; border-radius: 8px; padding: 0.65rem 1.1rem;
+    background: #0284c7; color: #fff; font-weight: 600; cursor: pointer; font-size: 0.88rem;
+  }
+  button.demo-btn:hover:not(:disabled) { background: #0369a1; }
+  button.demo-btn:disabled { background: #cbd5e1; cursor: not-allowed; }
+  button.demo-btn.pink { background: #db2777; }
+  button.demo-btn.pink:hover:not(:disabled) { background: #be185d; }
+
+  #status { font-size: 0.88rem; padding: 0.6rem 0.9rem; border-radius: 8px; background: #f0f9ff; border: 1px solid #bae6fd; color: #075985; margin-top: 1rem; }
+  #status.warn { background: #fff7ed; border-color: #fed7aa; color: #9a3412; }
+
+  #propsList { font-size: 0.85rem; font-family: ui-monospace, Consolas, monospace; color: #475569; margin-top: 0.8rem; }
+
+  #sentLog { list-style: none; margin: 1rem 0 0; padding: 0; font-size: 0.8rem; max-height: 360px; overflow-y: auto; }
+  #sentLog li { border: 1px solid #dbe3ee; border-radius: 8px; padding: 0.6rem 0.8rem; margin-bottom: 0.5rem; }
+  #sentLog .tag { display: inline-block; font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; padding: 0.1rem 0.45rem; border-radius: 999px; margin-right: 0.4rem; }
+  #sentLog .tag.sent { background: #dcfce7; color: #15803d; }
+  #sentLog .tag.debug { background: #e0e7ff; color: #3730a3; }
+  #sentLog pre { margin: 0.4rem 0 0; white-space: pre-wrap; word-break: break-word; }
+  #emptyLog { color: #94a3b8; font-style: italic; }
+
+  a.back { color: #0284c7; display: inline-block; }
+</style>
+</head>
+<body>
+<main>
+  <div class="card">
+    <h1>HW3 &mdash; Module 08: Configuration API</h1>
+    <p>This page loads <code>collector-v7.js</code>, a revealing-module IIFE that exposes only four public methods: <code>init()</code>, <code>track()</code>, <code>set()</code>, and <code>identify()</code>. Nothing collects until <code>init()</code> is called.</p>
+  </div>
+
+  <div class="card">
+    <h2>1. Initialize</h2>
+    <div class="field-row">
+      <label><input type="checkbox" id="debugToggle"> Debug mode (log to console, don't send over the network)</label>
+    </div>
+    <div class="field-row">
+      <label>Sample rate: <input type="number" id="sampleRate" value="1.0" min="0" max="1" step="0.1"></label>
+      <span style="color:#94a3b8">(1.0 = 100% of sessions)</span>
+    </div>
+    <div class="btn-row">
+      <button class="demo-btn" id="btnInit">Call collector.init()</button>
+      <button class="demo-btn" id="btnInitTwice">Call init() again (see warning)</button>
+    </div>
+    <div id="status">Not initialized yet.</div>
+  </div>
+
+  <div class="card">
+    <h2>2. Track custom events</h2>
+    <p>Calling <code>track()</code> before <code>init()</code> is a no-op with a console warning &mdash; try it before initializing above.</p>
+    <div class="btn-row">
+      <button class="demo-btn pink" id="btnTrackClick">track('button_click', {...})</button>
+      <button class="demo-btn pink" id="btnTrackSearch">track('search', {...})</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>3. Set persistent properties</h2>
+    <p><code>set()</code> attaches a key/value pair to every future beacon &mdash; the pageview beacon, every <code>track()</code> call, everything.</p>
+    <div class="btn-row">
+      <button class="demo-btn" id="btnSetEnv">set('environment', 'production')</button>
+      <button class="demo-btn" id="btnSetPlan">set('plan', 'enterprise')</button>
+    </div>
+    <div id="propsList"></div>
+  </div>
+
+  <div class="card">
+    <h2>4. Identify user</h2>
+    <div class="btn-row">
+      <button class="demo-btn" id="btnIdentify">identify('user-abc-123')</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Live Sent Log</h2>
+    <p id="emptyLog">Nothing sent yet.</p>
+    <ul id="sentLog"></ul>
+  </div>
+
+  <a class="back" href="/index.html">&larr; Back to collector home</a>
+</main>
+
+<script src="/collector-v7.js"></script>
+<script>
+(function () {
+  "use strict";
+
+  var statusEl = document.getElementById("status");
+  var propsListEl = document.getElementById("propsList");
+  var logEl = document.getElementById("sentLog");
+  var emptyLog = document.getElementById("emptyLog");
+  var knownProps = {};
+
+  window.addEventListener("collector-v7:sent", function (e) {
+    emptyLog.style.display = "none";
+    var detail = e.detail;
+    var li = document.createElement("li");
+    var tagClass = detail.debug ? "debug" : "sent";
+    var tagText = detail.debug ? "debug-only" : "sent";
+    li.innerHTML =
+      '<span class="tag ' + tagClass + '">' + tagText + '</span>' +
+      '<strong>' + detail.payload.type + '</strong>' +
+      '<pre>' + JSON.stringify(detail.payload, null, 2).replace(/</g, "&lt;") + '</pre>';
+    logEl.insertBefore(li, logEl.firstChild);
+  });
+
+  document.getElementById("btnInit").addEventListener("click", function () {
+    var debug = document.getElementById("debugToggle").checked;
+    var sampleRate = parseFloat(document.getElementById("sampleRate").value) || 1.0;
+    collector.init({ endpoint: "/collect", debug: debug, sampleRate: sampleRate });
+    statusEl.textContent = "init() called — debug: " + debug + ", sampleRate: " + sampleRate +
+      ". Check the console for the 'Collector initialized' log (only shown in debug mode) " +
+      "or 'Session not sampled' if the sample roll missed.";
+    statusEl.className = "";
+  });
+
+  document.getElementById("btnInitTwice").addEventListener("click", function () {
+    collector.init({ endpoint: "/collect" });
+    statusEl.textContent = "Called init() again — see the console for collector.init() called more than once.";
+    statusEl.className = "warn";
+  });
+
+  document.getElementById("btnTrackClick").addEventListener("click", function () {
+    collector.track("button_click", { id: "signup-cta", text: "Sign Up Free" });
+  });
+
+  document.getElementById("btnTrackSearch").addEventListener("click", function () {
+    collector.track("search", { query: "pricing", results: 12 });
+  });
+
+  document.getElementById("btnSetEnv").addEventListener("click", function () {
+    collector.set("environment", "production");
+    knownProps.environment = "production";
+    renderProps();
+  });
+
+  document.getElementById("btnSetPlan").addEventListener("click", function () {
+    collector.set("plan", "enterprise");
+    knownProps.plan = "enterprise";
+    renderProps();
+  });
+
+  document.getElementById("btnIdentify").addEventListener("click", function () {
+    collector.identify("user-abc-123");
+    knownProps.userId = "user-abc-123";
+    renderProps();
+  });
+
+  function renderProps() {
+    var lines = Object.keys(knownProps).map(function (k) {
+      return k + " = " + JSON.stringify(knownProps[k]);
+    });
+    propsListEl.textContent = lines.length
+      ? "Global properties set so far: " + lines.join(", ")
+      : "";
+  }
+})();
+</script>
+</body>
+</html>
