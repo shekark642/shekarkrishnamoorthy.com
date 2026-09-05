@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HW3 Module 09 — Extensions &amp; Plugins Test</title>
+<style>
+  body {
+    margin: 0;
+    font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: #f8fafc; color: #0f172a;
+  }
+  main { max-width: 680px; margin: 0 auto; padding: 2.5rem 1.5rem 6rem; }
+  .card {
+    background: #fff; border: 1px solid #dbe3ee; border-radius: 16px; padding: 1.75rem 2rem;
+    margin-bottom: 1.5rem;
+  }
+  h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
+  h2 { font-size: 1.1rem; }
+  p { color: #475569; line-height: 1.6; }
+  code { background: #eef2f7; padding: 0.1rem 0.4rem; border-radius: 4px; }
+
+  button.demo-btn, a.demo-link {
+    display: inline-block; border: none; border-radius: 8px; padding: 0.65rem 1.1rem;
+    background: #db2777; color: #fff; font-weight: 600; cursor: pointer; font-size: 0.88rem;
+    text-decoration: none; margin-top: 0.8rem;
+  }
+  button.demo-btn:hover, a.demo-link:hover { background: #be185d; }
+  button.demo-btn.blue { background: #0284c7; }
+  button.demo-btn.blue:hover { background: #0369a1; }
+
+  #statusPanel {
+    position: fixed; top: 1rem; right: 1rem; width: 220px;
+    background: #0f172a; color: #e2e8f0; border-radius: 12px; padding: 1rem 1.1rem;
+    font-size: 0.8rem; z-index: 100; box-shadow: 0 8px 24px rgba(0,0,0,0.25);
+  }
+  #statusPanel h3 { margin: 0 0 0.6rem; font-size: 0.85rem; color: #fff; }
+  #statusPanel .row { display: flex; justify-content: space-between; margin: 0.25rem 0; }
+  #statusPanel .row span:first-child { color: #94a3b8; }
+  #statusPanel .thresholds { display: flex; gap: 0.3rem; margin-top: 0.5rem; }
+  .threshold-chip {
+    flex: 1; text-align: center; padding: 0.2rem 0; border-radius: 6px;
+    background: #1e293b; color: #64748b; font-size: 0.7rem; font-weight: 700;
+  }
+  .threshold-chip.hit { background: #16a34a; color: #fff; }
+  #lastEvent { margin-top: 0.6rem; font-family: ui-monospace, Consolas, monospace; font-size: 0.68rem; color: #94a3b8; word-break: break-word; }
+
+  a.back { color: #0284c7; display: inline-block; }
+</style>
+</head>
+<body>
+  <div id="statusPanel">
+    <h3>Live Tracking Status</h3>
+    <div class="row"><span>Clicks tracked</span><span id="clickCount">0</span></div>
+    <div class="row"><span>Max scroll depth</span><span id="scrollMax">0%</span></div>
+    <div class="thresholds">
+      <div class="threshold-chip" id="chip25">25</div>
+      <div class="threshold-chip" id="chip50">50</div>
+      <div class="threshold-chip" id="chip75">75</div>
+      <div class="threshold-chip" id="chip100">100</div>
+    </div>
+    <div id="lastEvent">No events yet.</div>
+  </div>
+
+<main>
+  <div class="card">
+    <h1>HW3 &mdash; Module 09: Extensions &amp; Plugins</h1>
+    <p>This page loads <code>collector-v8.js</code> plus two extensions, <code>ext-clicks.js</code> and <code>ext-scroll.js</code>, registered with <code>collector.use()</code>. Click the buttons/links below and scroll down &mdash; the panel in the corner updates live from the real <code>collector-v8:sent</code> events, and every click/scroll beacon is also sent to <code>/collect</code>.</p>
+  </div>
+
+  <div class="card">
+    <h2 id="section-top">Clickable elements</h2>
+    <p>Each of these has a distinct id/class so the click tracker's CSS-selector-path builder produces something interesting.</p>
+    <button class="demo-btn" id="cta-signup">Sign Up Free</button><br>
+    <button class="demo-btn blue">Learn More</button><br>
+    <a class="demo-link" href="#section-top" id="nav-top-link">Back to top (in-page link)</a>
+  </div>
+
+  <div class="card">
+    <h2>Scroll down for more</h2>
+    <p>Keep scrolling &mdash; the scroll tracker reports at 25%, 50%, 75%, and 100% of page height, throttled to one measurement per animation frame.</p>
+  </div>
+
+  <div class="card">
+    <h2>Section A</h2>
+    <p>Filler content to build page height. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.</p>
+    <p>Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.</p>
+    <button class="demo-btn" id="btn-section-a">Click in Section A</button>
+  </div>
+
+  <div class="card">
+    <h2>Section B</h2>
+    <p>More filler content. Sed ut perspiciatis unde omnis iste natus error sit voluptatem accusantium doloremque laudantium, totam rem aperiam, eaque ipsa quae ab illo inventore veritatis et quasi architecto beatae vitae dicta sunt explicabo.</p>
+    <p>Nemo enim ipsam voluptatem quia voluptas sit aspernatur aut odit aut fugit, sed quia consequuntur magni dolores eos qui ratione voluptatem sequi nesciunt.</p>
+    <button class="demo-btn" id="btn-section-b">Click in Section B</button>
+  </div>
+
+  <div class="card">
+    <h2>Section C</h2>
+    <p>Neque porro quisquam est, qui dolorem ipsum quia dolor sit amet, consectetur, adipisci velit, sed quia non numquam eius modi tempora incidunt ut labore et dolore magnam aliquam quaerat voluptatem.</p>
+    <p>Ut enim ad minima veniam, quis nostrum exercitationem ullam corporis suscipit laboriosam, nisi ut aliquid ex ea commodi consequatur.</p>
+    <button class="demo-btn" id="btn-section-c">Click in Section C</button>
+  </div>
+
+  <div class="card">
+    <h2>Section D (near the bottom)</h2>
+    <p>Quis autem vel eum iure reprehenderit qui in ea voluptate velit esse quam nihil molestiae consequatur, vel illum qui dolorem eum fugiat quo voluptas nulla pariatur.</p>
+    <button class="demo-btn" id="btn-section-d">Click in Section D</button>
+  </div>
+
+  <div class="card">
+    <h2>The End</h2>
+    <p>You've reached 100% scroll depth. The scroll tracker should also fire a final <code>scroll_final</code> event when you navigate away or switch tabs from here.</p>
+    <a class="back" href="/index.html">&larr; Back to collector home</a>
+  </div>
+</main>
+
+<script src="/collector-v8.js"></script>
+<script src="/ext-clicks.js"></script>
+<script src="/ext-scroll.js"></script>
+<script>
+(function () {
+  "use strict";
+
+  collector.init({ endpoint: "/collect", debug: false });
+  collector.use(ClickTracker);
+  collector.use(ScrollTracker);
+
+  var clickCount = 0;
+  var clickCountEl = document.getElementById("clickCount");
+  var scrollMaxEl = document.getElementById("scrollMax");
+  var lastEventEl = document.getElementById("lastEvent");
+  var chips = { 25: document.getElementById("chip25"), 50: document.getElementById("chip50"),
+                75: document.getElementById("chip75"), 100: document.getElementById("chip100") };
+
+  window.addEventListener("collector-v8:sent", function (e) {
+    var payload = e.detail.payload;
+    lastEventEl.textContent = payload.type + (payload.data ? " " + JSON.stringify(payload.data) : "");
+
+    if (payload.type === "click") {
+      clickCount++;
+      clickCountEl.textContent = clickCount;
+    } else if (payload.type === "scroll_depth") {
+      scrollMaxEl.textContent = payload.data.maxDepth + "%";
+      var chip = chips[payload.data.threshold];
+      if (chip) chip.className = "threshold-chip hit";
+    } else if (payload.type === "scroll_final") {
+      scrollMaxEl.textContent = payload.data.maxDepth + "% (final)";
+    }
+  });
+})();
+</script>
+</body>
+</html>
