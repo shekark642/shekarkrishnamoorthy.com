@@ -3,8 +3,22 @@ const crypto = require('crypto');
 const os = require('os');
 const fs = require('fs');
 const path = require('path');
+const mysql = require('mysql2/promise');
 
 const app = express();
+
+// Credentials come from the environment (EnvironmentFile= in the systemd
+// unit, outside the git repo) - never hardcoded here, since this file is
+// public on GitHub.
+const dbPool = mysql.createPool({
+  host: process.env.DB_HOST || '127.0.0.1',
+  user: process.env.DB_USER || 'analytics_app',
+  password: process.env.DB_PASSWORD,
+  database: process.env.DB_NAME || 'analytics',
+  waitForConnections: true,
+  connectionLimit: 5,
+  queueLimit: 0
+});
 
 // Apache proxies to us over loopback and adds X-Forwarded-For; trust that so
 // req.ip reflects the real client, not 127.0.0.1.
@@ -435,7 +449,14 @@ app.use('/collect', (req, res, next) => {
   next();
 });
 
-app.post('/collect', (req, res) => {
+function appendToJsonlFallback(payload, reason) {
+  console.error('[collect] MySQL insert failed, falling back to analytics.jsonl:', reason);
+  fs.appendFile(ANALYTICS_LOG, JSON.stringify(payload) + '\n', (err) => {
+    if (err) console.error('[collect] fallback JSONL write also failed:', err);
+  });
+}
+
+app.post('/collect', async (req, res) => {
   const payload = req.body;
 
   if (!payload || typeof payload.url !== 'string' || typeof payload.type !== 'string') {
@@ -452,14 +473,26 @@ app.post('/collect', (req, res) => {
   payload.serverTimestamp = new Date().toISOString();
   payload.ip = req.ip;
 
-  const line = JSON.stringify(payload) + '\n';
-  fs.appendFile(ANALYTICS_LOG, line, (err) => {
-    if (err) {
-      console.error('[collect] write error:', err);
-      return res.sendStatus(500);
-    }
+  try {
+    await dbPool.execute(
+      'INSERT INTO events (session_id, type, url, ip, client_timestamp, payload) VALUES (?, ?, ?, ?, ?, ?)',
+      [
+        typeof payload.session === 'string' ? payload.session.slice(0, 64) : null,
+        payload.type.slice(0, 32),
+        payload.url,
+        payload.ip || null,
+        payload.timestamp ? new Date(payload.timestamp) : null,
+        JSON.stringify(payload)
+      ]
+    );
     res.sendStatus(204); // No Content - confirms receipt, nothing to return
-  });
+  } catch (err) {
+    // Never lose a beacon just because the DB hiccuped - fall back to the
+    // same local JSONL file Module 04 used, and still tell the client we
+    // received it.
+    appendToJsonlFallback(payload, err.message);
+    res.sendStatus(204);
+  }
 });
 
 // Body-parser errors (malformed JSON, etc.) land here instead of Express's
