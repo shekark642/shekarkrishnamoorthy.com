@@ -250,10 +250,14 @@
     // be able to flood the endpoint with beacons.
     if (errorCount >= MAX_ERRORS) return;
 
-    // Deduplicate by type+message+source+line - the same bug firing on every
-    // frame/render should count once, not hundreds of times.
+    // Deduplicate by type+message+source+line+src - the same bug firing on
+    // every frame/render should count once, not hundreds of times. `src` is
+    // included because resource errors carry no message/source/line, so two
+    // *different* broken resources (e.g. an image and a script) would
+    // otherwise collide on the same key and only the first would be sent.
     const key = errorData.type + ':' + errorData.message + ':' +
-      (errorData.source || '') + ':' + (errorData.line || '');
+      (errorData.source || '') + ':' + (errorData.line || '') + ':' +
+      (errorData.src || '');
     if (reportedErrors.has(key)) return;
     reportedErrors.add(key);
     errorCount++;

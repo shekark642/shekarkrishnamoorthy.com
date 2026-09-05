@@ -21,12 +21,6 @@
   ul { color: #475569; }
   a.back { color: #0284c7; display: inline-block; }
 </style>
-<!-- Loaded in <head>, before the broken <img>/<script> tags below, so the
-     window 'error' capture-phase listener is attached BEFORE those elements
-     attempt (and fail) to load. Loading collector-v6.js at the end of
-     <body> instead would miss these two resource errors entirely - error
-     events fire once, synchronously, and are not buffered/replayed the way
-     PerformanceObserver entries are. -->
 <script src="/collector-v6.js"></script>
 </head>
 <body>
@@ -42,10 +36,6 @@
     </ul>
     <p>Open the console to see each <code>[collector-v6] error payload:</code> log, or check <code>/test-v6.html</code> for a live visual log.</p>
   </div>
-
-  <!-- Resource load failures: both intentionally point at missing files. -->
-  <img src="/definitely-missing-image.png" alt="broken" style="display:none">
-  <script src="/definitely-missing-script.js"></script>
 
   <a class="back" href="/index.html">&larr; Back to collector home</a>
 </main>
@@ -67,6 +57,28 @@
   setTimeout(function () {
     Promise.reject(new Error("Simulated failed API call (no .catch() handler)"));
   }, 150);
+
+  // Resource load failures: created dynamically, after collector-v6.js has
+  // already attached its capture-phase listener. A static <img>/<script src>
+  // tag in the HTML source gets fetched by the browser's preload scanner as
+  // soon as the raw markup is seen - independent of when the parser actually
+  // reaches and executes a <script> earlier on the page - so a fast 404 can
+  // race ahead of the listener no matter where that script is placed.
+  // Creating the elements from script, after the listener exists, removes
+  // that race entirely.
+  setTimeout(function () {
+    var img = document.createElement("img");
+    img.alt = "broken";
+    img.style.display = "none";
+    img.src = "/definitely-missing-image.png";
+    document.body.appendChild(img);
+  }, 200);
+
+  setTimeout(function () {
+    var script = document.createElement("script");
+    script.src = "/definitely-missing-script.js";
+    document.body.appendChild(script);
+  }, 250);
 })();
 </script>
 </body>
