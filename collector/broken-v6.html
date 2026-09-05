@@ -21,6 +21,13 @@
   ul { color: #475569; }
   a.back { color: #0284c7; display: inline-block; }
 </style>
+<!-- Loaded in <head>, before the broken <img>/<script> tags below, so the
+     window 'error' capture-phase listener is attached BEFORE those elements
+     attempt (and fail) to load. Loading collector-v6.js at the end of
+     <body> instead would miss these two resource errors entirely - error
+     events fire once, synchronously, and are not buffered/replayed the way
+     PerformanceObserver entries are. -->
+<script src="/collector-v6.js"></script>
 </head>
 <body>
 <main>
@@ -43,7 +50,6 @@
   <a class="back" href="/index.html">&larr; Back to collector home</a>
 </main>
 
-<script src="/collector-v6.js"></script>
 <script>
 (function () {
   "use strict";
