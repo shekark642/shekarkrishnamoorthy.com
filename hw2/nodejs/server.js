@@ -439,8 +439,14 @@ const ANALYTICS_LOG = path.join(__dirname, 'analytics.jsonl');
 // endpoint (e.g. embedded on shekarkrishnamoorthy.com, posting here). Applies
 // to any method hitting /collect; OPTIONS (the CORS preflight for JSON
 // fetch() calls) is answered directly, POST falls through to the handler.
+//
+// navigator.sendBeacon() requests are always sent credentialed (per the
+// Beacon API spec, even cross-origin), and CORS forbids pairing a
+// credentialed request with a wildcard Access-Control-Allow-Origin - so the
+// origin must be reflected back literally, not '*'.
 app.use('/collect', (req, res, next) => {
-  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
+  res.header('Access-Control-Allow-Credentials', 'true');
   res.header('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.header('Access-Control-Allow-Headers', 'Content-Type');
   if (req.method === 'OPTIONS') {
