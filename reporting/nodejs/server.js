@@ -1,5 +1,7 @@
 const express = require('express');
 const mysql = require('mysql2/promise');
+const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 
 const app = express();
 app.disable('x-powered-by');
@@ -19,9 +21,114 @@ const dbPool = mysql.createPool({
   queueLimit: 0
 });
 
-// The reporting dashboard (a future phase) will fetch this cross-origin,
-// so this API allows any origin rather than assuming same-origin like a
-// typical server-rendered app would.
+// --- Sessions (HW4 auth) ---
+//
+// In-memory, same durability tradeoff already used elsewhere in this project
+// (HW2's state-nodejs, the fingerprint demo) - fine for this assignment's
+// scope; a process restart logs everyone out, nothing more.
+const sessions = new Map(); // token -> { userId, username, isAdmin }
+const SESSION_COOKIE = 'reporting_session';
+
+function parseCookies(header) {
+  const out = {};
+  if (!header) return out;
+  header.split(';').forEach((part) => {
+    const idx = part.indexOf('=');
+    if (idx === -1) return;
+    const key = part.slice(0, idx).trim();
+    const val = part.slice(idx + 1).trim();
+    try { out[key] = decodeURIComponent(val); } catch { out[key] = val; }
+  });
+  return out;
+}
+
+// Attaches req.session (or null) on every request, before anything else runs.
+app.use((req, res, next) => {
+  const cookies = parseCookies(req.headers.cookie);
+  const token = cookies[SESSION_COOKIE];
+  req.session = token && sessions.has(token) ? sessions.get(token) : null;
+  next();
+});
+
+// Two flavors of each guard: API routes get a JSON 401/403 (so fetch() calls
+// can handle it programmatically), page routes get redirected to the login
+// screen (so a browser navigating there directly lands somewhere sensible).
+function requireAuthApi(req, res, next) {
+  if (!req.session) return res.status(401).json({ error: 'not logged in' });
+  next();
+}
+function requireAdminApi(req, res, next) {
+  if (!req.session) return res.status(401).json({ error: 'not logged in' });
+  if (!req.session.isAdmin) return res.status(403).json({ error: 'admin access required' });
+  next();
+}
+function requireAuthPage(req, res, next) {
+  if (!req.session) return res.redirect('/login.html');
+  next();
+}
+function requireAdminPage(req, res, next) {
+  if (!req.session) return res.redirect('/login.html');
+  if (!req.session.isAdmin) return res.status(403).type('html').send('<h1>403 Forbidden</h1><p>Admin access required.</p>');
+  next();
+}
+
+// --- Auth routes ---
+
+app.post('/auth/login', async (req, res) => {
+  const body = req.body || {};
+  const usernameOrEmail = body.usernameOrEmail;
+  const password = body.password;
+  if (typeof usernameOrEmail !== 'string' || !usernameOrEmail || typeof password !== 'string' || !password) {
+    return res.status(400).json({ error: 'usernameOrEmail and password are required' });
+  }
+
+  try {
+    const [rows] = await dbPool.query(
+      'SELECT id, username, password_hash, is_admin FROM users WHERE username = ? OR email = ? LIMIT 1',
+      [usernameOrEmail, usernameOrEmail]
+    );
+    if (!rows.length) return res.status(401).json({ error: 'invalid username/email or password' });
+
+    const user = rows[0];
+    const match = await bcrypt.compare(password, user.password_hash);
+    if (!match) return res.status(401).json({ error: 'invalid username/email or password' });
+
+    const token = crypto.randomBytes(32).toString('hex');
+    sessions.set(token, { userId: user.id, username: user.username, isAdmin: !!user.is_admin });
+
+    res.cookie(SESSION_COOKIE, token, {
+      httpOnly: true,
+      secure: true,
+      sameSite: 'Lax',
+      maxAge: 24 * 60 * 60 * 1000,
+      path: '/'
+    });
+    res.json({ success: true, username: user.username, isAdmin: !!user.is_admin });
+  } catch (err) {
+    console.error('[POST /auth/login] error:', err.message);
+    res.status(500).json({ error: 'server error' });
+  }
+});
+
+app.post('/auth/logout', (req, res) => {
+  const cookies = parseCookies(req.headers.cookie);
+  const token = cookies[SESSION_COOKIE];
+  if (token) sessions.delete(token);
+  res.clearCookie(SESSION_COOKIE, { path: '/' });
+  res.json({ success: true });
+});
+
+app.get('/auth/me', requireAuthApi, (req, res) => {
+  res.json({ username: req.session.username, isAdmin: req.session.isAdmin });
+});
+
+// The reporting dashboard fetches these same-origin (it's served by this
+// same app - see the page routes further down), so CORS isn't actually
+// needed for normal use. It's kept permissive for non-browser tools
+// (curl/Postman) that don't enforce CORS anyway; the real access control is
+// requireAuthApi below, not this header - CORS only affects whether a
+// *browser* running someone else's JS can read the response, not whether a
+// request reaches the server at all.
 app.use('/api', (req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
@@ -29,6 +136,12 @@ app.use('/api', (req, res, next) => {
   if (req.method === 'OPTIONS') return res.sendStatus(204);
   next();
 });
+
+// Every /api/* route requires a logged-in session - this is what actually
+// stops a grader (or anyone else) from reading report data without logging
+// in first, since hitting the API directly would otherwise bypass a
+// login wall that only gated the HTML pages.
+app.use('/api', requireAuthApi);
 
 // Resource: /api/events, mapping directly onto the `events` table the
 // collector's /collect endpoint writes into (session_id, type, url, ip,
@@ -289,6 +402,112 @@ app.get('/api/reports/summary', async (req, res) => {
     res.json({ totals, groupBy, byGroup, customMetric });
   } catch (err) {
     console.error('[GET /api/reports/summary] error:', err.message);
+    res.status(500).json({ error: 'database error' });
+  }
+});
+
+// --- User management (HW4 Part 2) ---
+//
+// Full CRUD on the `users` table. requireAuthApi already ran (blanket /api
+// middleware above); requireAdminApi only needs to add the isAdmin check on
+// top of that. Password hashes are never included in any response.
+
+const USER_FIELDS = 'id, username, email, is_admin, created_at';
+
+app.get('/api/users', requireAdminApi, async (req, res) => {
+  try {
+    const [rows] = await dbPool.query(`SELECT ${USER_FIELDS} FROM users ORDER BY id`);
+    res.json(rows);
+  } catch (err) {
+    console.error('[GET /api/users] error:', err.message);
+    res.status(500).json({ error: 'database error' });
+  }
+});
+
+app.get('/api/users/:id', requireAdminApi, async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'id must be a positive integer' });
+  try {
+    const [rows] = await dbPool.query(`SELECT ${USER_FIELDS} FROM users WHERE id = ?`, [id]);
+    if (!rows.length) return res.status(404).json({ error: 'not found' });
+    res.json(rows[0]);
+  } catch (err) {
+    console.error('[GET /api/users/:id] error:', err.message);
+    res.status(500).json({ error: 'database error' });
+  }
+});
+
+app.post('/api/users', requireAdminApi, async (req, res) => {
+  const body = req.body || {};
+  if ('id' in body) return res.status(400).json({ error: 'POST must not include an id - the database assigns one' });
+  if (typeof body.username !== 'string' || !body.username) return res.status(400).json({ error: 'username is required' });
+  if (typeof body.email !== 'string' || !body.email) return res.status(400).json({ error: 'email is required' });
+  if (typeof body.password !== 'string' || body.password.length < 8) {
+    return res.status(400).json({ error: 'password is required and must be at least 8 characters' });
+  }
+
+  try {
+    const hash = await bcrypt.hash(body.password, 10);
+    const [result] = await dbPool.execute(
+      'INSERT INTO users (username, email, password_hash, is_admin) VALUES (?, ?, ?, ?)',
+      [body.username.slice(0, 64), body.email.slice(0, 255), hash, body.isAdmin ? 1 : 0]
+    );
+    const [rows] = await dbPool.query(`SELECT ${USER_FIELDS} FROM users WHERE id = ?`, [result.insertId]);
+    res.status(201).json(rows[0]);
+  } catch (err) {
+    if (err.code === 'ER_DUP_ENTRY') {
+      return res.status(409).json({ error: 'username or email already exists' });
+    }
+    console.error('[POST /api/users] error:', err.message);
+    res.status(500).json({ error: 'database error' });
+  }
+});
+
+app.put('/api/users/:id', requireAdminApi, async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'id must be a positive integer' });
+
+  const body = req.body || {};
+  const fields = [];
+  const params = [];
+
+  if (typeof body.username === 'string' && body.username) { fields.push('username = ?'); params.push(body.username.slice(0, 64)); }
+  if (typeof body.email === 'string' && body.email) { fields.push('email = ?'); params.push(body.email.slice(0, 255)); }
+  if (typeof body.isAdmin === 'boolean') { fields.push('is_admin = ?'); params.push(body.isAdmin ? 1 : 0); }
+  if (typeof body.password === 'string' && body.password) {
+    if (body.password.length < 8) return res.status(400).json({ error: 'password must be at least 8 characters' });
+    fields.push('password_hash = ?');
+    params.push(await bcrypt.hash(body.password, 10));
+  }
+
+  if (!fields.length) return res.status(400).json({ error: 'no updatable fields provided' });
+
+  try {
+    const [result] = await dbPool.execute(`UPDATE users SET ${fields.join(', ')} WHERE id = ?`, [...params, id]);
+    if (!result.affectedRows) return res.status(404).json({ error: 'not found' });
+    const [rows] = await dbPool.query(`SELECT ${USER_FIELDS} FROM users WHERE id = ?`, [id]);
+    res.json(rows[0]);
+  } catch (err) {
+    if (err.code === 'ER_DUP_ENTRY') {
+      return res.status(409).json({ error: 'username or email already exists' });
+    }
+    console.error('[PUT /api/users/:id] error:', err.message);
+    res.status(500).json({ error: 'database error' });
+  }
+});
+
+app.delete('/api/users/:id', requireAdminApi, async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'id must be a positive integer' });
+  if (req.session.userId === id) {
+    return res.status(400).json({ error: 'cannot delete your own currently logged-in account' });
+  }
+  try {
+    const [result] = await dbPool.execute('DELETE FROM users WHERE id = ?', [id]);
+    if (!result.affectedRows) return res.status(404).json({ error: 'not found' });
+    res.sendStatus(204);
+  } catch (err) {
+    console.error('[DELETE /api/users/:id] error:', err.message);
     res.status(500).json({ error: 'database error' });
   }
 });

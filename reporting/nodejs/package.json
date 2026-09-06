@@ -1,14 +1,15 @@
 {
-  "name": "hw3-reporting-api",
+  "name": "hw4-analytics-viz-platform",
   "version": "1.0.0",
   "private": true,
-  "description": "HW3 Phase 5: REST reporting API (Node/Express) over the analytics MySQL database",
+  "description": "HW4 Analytics Viz Platform: authenticated reporting dashboard + REST API over the analytics MySQL database",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
   },
   "dependencies": {
     "express": "^4.19.2",
-    "mysql2": "^3.11.0"
+    "mysql2": "^3.11.0",
+    "bcryptjs": "^3.0.3"
   }
 }
