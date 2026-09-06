@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>User Management — Analytics Dashboard</title>
+<style>
+  body { font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif; background: #f8fafc; color: #0f172a; margin: 0; padding: 2rem 1.5rem 4rem; }
+  main { max-width: 860px; margin: 0 auto; }
+  header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 0.6rem; }
+  header h1 { font-size: 1.3rem; margin: 0; }
+  nav a { color: #0284c7; text-decoration: none; font-size: 0.88rem; margin-left: 1rem; font-weight: 600; }
+  .card { background: #fff; border: 1px solid #dbe3ee; border-radius: 16px; padding: 1.75rem 2rem; margin-bottom: 1.5rem; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+  th, td { text-align: left; padding: 0.55rem 0.7rem; border-bottom: 1px solid #eef2f7; }
+  th { color: #475569; font-weight: 600; }
+  .badge { display: inline-block; padding: 0.15rem 0.55rem; border-radius: 999px; font-size: 0.72rem; font-weight: 700; text-transform: uppercase; }
+  .badge.admin { background: #fef3c7; color: #92400e; }
+  .badge.basic { background: #e2e8f0; color: #475569; }
+  button { border: none; border-radius: 6px; padding: 0.35rem 0.7rem; font-size: 0.8rem; font-weight: 600; cursor: pointer; margin-right: 0.3rem; }
+  .btn-edit { background: #e0f2fe; color: #0369a1; }
+  .btn-edit:hover { background: #bae6fd; }
+  .btn-delete { background: #fee2e2; color: #b91c1c; }
+  .btn-delete:hover { background: #fecaca; }
+  .btn-primary { background: #0284c7; color: #fff; padding: 0.6rem 1.1rem; font-size: 0.88rem; }
+  .btn-primary:hover { background: #0369a1; }
+
+  .modal-backdrop { display: none; position: fixed; inset: 0; background: rgba(15,23,42,0.5); align-items: center; justify-content: center; z-index: 100; }
+  .modal-backdrop.open { display: flex; }
+  .modal { background: #fff; border-radius: 14px; padding: 1.75rem; width: 100%; max-width: 380px; }
+  .modal h2 { font-size: 1.05rem; margin-top: 0; }
+  .modal label { display: block; font-size: 0.83rem; font-weight: 600; color: #334155; margin: 0.7rem 0 0.25rem; }
+  .modal input[type="text"], .modal input[type="email"], .modal input[type="password"] { width: 100%; padding: 0.5rem 0.7rem; border: 1px solid #dbe3ee; border-radius: 7px; font-size: 0.88rem; box-sizing: border-box; }
+  .modal .checkrow { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.8rem; }
+  .modal .actions { display: flex; gap: 0.6rem; margin-top: 1.2rem; }
+  .modal .actions button { flex: 1; padding: 0.6rem; }
+  .btn-cancel { background: #e2e8f0; color: #0f172a; }
+  .btn-cancel:hover { background: #cbd5e1; }
+  .err { background: #fef2f2; border: 1px solid #fecaca; color: #b91c1c; border-radius: 8px; padding: 0.5rem 0.7rem; font-size: 0.82rem; margin-top: 0.8rem; display: none; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>User Management</h1>
+    <nav>
+      <a href="/index.html">&larr; Dashboard</a>
+      <a href="#" id="logoutLink">Log out</a>
+    </nav>
+  </header>
+
+  <div class="card">
+    <button class="btn-primary" id="createBtn">+ New User</button>
+    <table>
+      <thead><tr><th>Username</th><th>Email</th><th>Role</th><th>Created</th><th>Actions</th></tr></thead>
+      <tbody id="userRows"></tbody>
+    </table>
+  </div>
+</main>
+
+<div class="modal-backdrop" id="modalBackdrop">
+  <div class="modal">
+    <h2 id="modalTitle">New User</h2>
+    <form id="userForm">
+      <input type="hidden" id="userId">
+      <label for="username">Username</label>
+      <input type="text" id="username" required>
+      <label for="email">Email</label>
+      <input type="email" id="email" required>
+      <label for="password" id="passwordLabel">Password</label>
+      <input type="password" id="password">
+      <div class="checkrow">
+        <input type="checkbox" id="isAdmin">
+        <label for="isAdmin" style="margin:0">Admin access</label>
+      </div>
+      <div class="err" id="formErr"></div>
+      <div class="actions">
+        <button type="button" class="btn-cancel" id="cancelBtn">Cancel</button>
+        <button type="submit" class="btn-primary">Save</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  var API = "/api/users";
+
+  function esc(s) { return String(s).replace(/</g, "&lt;"); }
+
+  function loadUsers() {
+    fetch(API).then(function (r) { return r.json(); }).then(function (users) {
+      document.getElementById("userRows").innerHTML = users.map(function (u) {
+        return "<tr>" +
+          "<td>" + esc(u.username) + "</td>" +
+          "<td>" + esc(u.email) + "</td>" +
+          "<td><span class='badge " + (u.is_admin ? "admin'>Admin" : "basic'>Basic") + "</span></td>" +
+          "<td>" + new Date(u.created_at).toLocaleDateString() + "</td>" +
+          "<td>" +
+            "<button class='btn-edit' data-id='" + u.id + "'>Edit</button>" +
+            "<button class='btn-delete' data-id='" + u.id + "' data-username='" + esc(u.username) + "'>Delete</button>" +
+          "</td>" +
+        "</tr>";
+      }).join("");
+
+      document.querySelectorAll(".btn-edit").forEach(function (btn) {
+        btn.addEventListener("click", function () { openEdit(btn.dataset.id, users); });
+      });
+      document.querySelectorAll(".btn-delete").forEach(function (btn) {
+        btn.addEventListener("click", function () { deleteUser(btn.dataset.id, btn.dataset.username); });
+      });
+    });
+  }
+
+  function openModal(title) {
+    document.getElementById("modalTitle").textContent = title;
+    document.getElementById("formErr").style.display = "none";
+    document.getElementById("modalBackdrop").classList.add("open");
+  }
+  function closeModal() {
+    document.getElementById("modalBackdrop").classList.remove("open");
+    document.getElementById("userForm").reset();
+    document.getElementById("userId").value = "";
+  }
+
+  function openCreate() {
+    openModal("New User");
+    document.getElementById("passwordLabel").textContent = "Password";
+    document.getElementById("password").required = true;
+  }
+
+  function openEdit(id, users) {
+    var user = users.filter(function (u) { return String(u.id) === String(id); })[0];
+    if (!user) return;
+    openModal("Edit User");
+    document.getElementById("userId").value = user.id;
+    document.getElementById("username").value = user.username;
+    document.getElementById("email").value = user.email;
+    document.getElementById("isAdmin").checked = !!user.is_admin;
+    document.getElementById("passwordLabel").textContent = "New Password (leave blank to keep current)";
+    document.getElementById("password").required = false;
+  }
+
+  function deleteUser(id, username) {
+    if (!window.confirm("Delete user \"" + username + "\"? This cannot be undone.")) return;
+    fetch(API + "/" + id, { method: "DELETE" }).then(function (r) {
+      if (r.status === 204) { loadUsers(); return; }
+      return r.json().then(function (body) { alert(body.error || "Delete failed."); });
+    });
+  }
+
+  document.getElementById("createBtn").addEventListener("click", openCreate);
+  document.getElementById("cancelBtn").addEventListener("click", closeModal);
+
+  document.getElementById("userForm").addEventListener("submit", function (e) {
+    e.preventDefault();
+    var id = document.getElementById("userId").value;
+    var body = {
+      username: document.getElementById("username").value,
+      email: document.getElementById("email").value,
+      isAdmin: document.getElementById("isAdmin").checked
+    };
+    var password = document.getElementById("password").value;
+    if (password) body.password = password;
+
+    var url = id ? API + "/" + id : API;
+    var method = id ? "PUT" : "POST";
+
+    fetch(url, {
+      method: method,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    }).then(function (r) {
+      return r.json().then(function (data) { return { ok: r.ok, data: data }; });
+    }).then(function (res) {
+      if (!res.ok) {
+        var errBox = document.getElementById("formErr");
+        errBox.textContent = res.data.error || "Save failed.";
+        errBox.style.display = "block";
+        return;
+      }
+      closeModal();
+      loadUsers();
+    });
+  });
+
+  document.getElementById("logoutLink").addEventListener("click", function (e) {
+    e.preventDefault();
+    fetch("/auth/logout", { method: "POST" }).then(function () {
+      window.location.href = "/logout.html";
+    });
+  });
+
+  loadUsers();
+})();
+</script>
+</body>
+</html>
