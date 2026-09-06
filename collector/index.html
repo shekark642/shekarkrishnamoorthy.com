@@ -7,6 +7,7 @@
 <!-- Cross-origin: this subdomain has its own separate document root, so a
      relative /assets/ path would 404 here - the shared stylesheet only
      physically exists under the main site's public_html. -->
+<link rel="icon" type="image/svg+xml" href="https://shekarkrishnamoorthy.com/favicon.svg">
 <link rel="stylesheet" href="https://shekarkrishnamoorthy.com/assets/site-nav.css">
 <style>
   main { max-width: 1000px; margin: 0 auto; padding: 2.5rem 1.5rem 4rem; }
@@ -25,11 +26,16 @@
 
 <header class="site-header">
   <div class="site-header-inner">
-    <nav aria-label="Primary">
-      <a href="https://shekarkrishnamoorthy.com/">Home</a>
-      <a href="https://shekarkrishnamoorthy.com/important/projects.html">Projects</a>
-      <a href="https://test.shekarkrishnamoorthy.com/">Test</a>
-    </nav>
+    <div class="site-header-left">
+      <a class="site-favicon" href="https://shekarkrishnamoorthy.com/" aria-label="Home">
+        <img src="https://shekarkrishnamoorthy.com/favicon.svg" alt="" width="28" height="28">
+      </a>
+      <nav aria-label="Primary">
+        <a href="https://shekarkrishnamoorthy.com/">Home</a>
+        <a href="https://shekarkrishnamoorthy.com/important/projects.html">Projects</a>
+        <a href="https://test.shekarkrishnamoorthy.com/">Music</a>
+      </nav>
+    </div>
     <nav aria-label="Reporting">
       <a href="https://reporting.shekarkrishnamoorthy.com/">Reporting</a>
     </nav>

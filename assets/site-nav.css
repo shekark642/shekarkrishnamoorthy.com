@@ -58,15 +58,20 @@ a { color: var(--accent); }
 .btn-link.secondary:hover { background: #be185d; }
 
 /* ---------- Site-wide header ---------- */
-/* One simple bar, the same on every page across every subdomain: two nav
-   groups, left and right, that wrap naturally on narrow screens. Use on
-   any page:
+/* One simple bar, the same on every page across every subdomain: the
+   favicon + primary links grouped on the left, Reporting alone on the
+   right, wrapping naturally on narrow screens. Use on any page:
    <header class="site-header"><div class="site-header-inner">
-     <nav aria-label="Primary">
-       <a class="active" href="https://shekarkrishnamoorthy.com/">Home</a>
-       <a href="https://shekarkrishnamoorthy.com/important/projects.html">Projects</a>
-       <a href="https://test.shekarkrishnamoorthy.com/">Test</a>
-     </nav>
+     <div class="site-header-left">
+       <a class="site-favicon" href="https://shekarkrishnamoorthy.com/" aria-label="Home">
+         <img src="https://shekarkrishnamoorthy.com/favicon.svg" alt="" width="28" height="28">
+       </a>
+       <nav aria-label="Primary">
+         <a class="active" href="https://shekarkrishnamoorthy.com/">Home</a>
+         <a href="https://shekarkrishnamoorthy.com/important/projects.html">Projects</a>
+         <a href="https://test.shekarkrishnamoorthy.com/">Music</a>
+       </nav>
+     </div>
      <nav aria-label="Reporting">
        <a href="https://reporting.shekarkrishnamoorthy.com/">Reporting</a>
      </nav>
@@ -86,6 +91,20 @@ header.site-header {
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 0.8rem;
+}
+.site-header-left {
+  display: flex;
+  align-items: center;
+  gap: 1.2rem;
+  flex-wrap: wrap;
+}
+.site-header-left .site-favicon {
+  display: flex;
+  line-height: 0;
+}
+.site-header-left .site-favicon img {
+  display: block;
+  border-radius: 50%;
 }
 header.site-header nav {
   display: flex;
