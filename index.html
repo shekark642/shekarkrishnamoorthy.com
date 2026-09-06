@@ -15,20 +15,6 @@
 <script src="https://collector.shekarkrishnamoorthy.com/collector.js" async></script>
 <style>
 
-  .team-card {
-    background: rgba(255,255,255,0.06);
-    border: 1px solid rgba(255,255,255,0.15);
-    border-radius: 14px;
-    padding: 1.1rem 1.3rem;
-    min-width: 220px;
-  }
-  .team-card h2 {
-    margin: 0 0 0.75rem;
-    font-size: 0.95rem;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: #93c5fd;
-  }
   .team-card ul {
     list-style: none;
     margin: 0;
@@ -45,22 +31,6 @@
   }
   .member-name {
     font-weight: 600;
-  }
-  .btn {
-    display: inline-block;
-    background: var(--accent);
-    color: #04121f;
-    text-decoration: none;
-    font-weight: 600;
-    font-size: 0.85rem;
-    padding: 0.4rem 0.8rem;
-    border-radius: 8px;
-    white-space: nowrap;
-    transition: transform 0.15s ease, background 0.2s ease;
-  }
-  .btn:hover {
-    background: #7dd3fc;
-    transform: translateY(-1px);
   }
 
   /* ---------- Main content ---------- */
@@ -130,48 +100,39 @@
     padding: 1.5rem;
   }
 
-  @media (max-width: 560px) {
-    .banner-inner {
-      flex-direction: column;
-    }
-    .team-card {
-      align-self: stretch;
-    }
-  }
 </style>
 </head>
 <body>
 
-<header class="banner">
-  <div class="banner-inner">
-    <div class="welcome">
-      <p class="eyebrow">Welcome to</p>
-      <h1>Shekar Krishnamoorthy<span class="dot">.</span>com</h1>
-      <p class="subtitle">A small site running on a DigitalOcean droplet, served by Apache, and built one virtual host at a time.</p>
-    </div>
-
-    <aside class="team-card" aria-labelledby="team-heading">
-      <h2 id="team-heading">Team Members</h2>
-      <ul>
-        <li>
-          <span class="member-name">Shekar Krishnamoorthy</span>
-          <a class="btn" href="/members/shekarkrishnamoorthy.html">About Me</a>
-        </li>
-        <!-- Add one <li> per teammate, same pattern, each linking to /members/&lt;name&gt;.html -->
-      </ul>
-    </aside>
-  </div>
-  <nav class="site-nav" aria-label="Site sections">
-    <div class="site-nav-inner">
+<header class="site-header">
+  <div class="site-header-inner">
+    <a class="logo" href="https://shekarkrishnamoorthy.com/">Shekar Krishnamoorthy</a>
+    <nav aria-label="Site sections">
       <a class="active" href="https://shekarkrishnamoorthy.com/">Home</a>
       <a href="https://collector.shekarkrishnamoorthy.com/">Collector</a>
       <a href="https://reporting.shekarkrishnamoorthy.com/">Reporting</a>
       <a href="https://test.shekarkrishnamoorthy.com/">Test</a>
-    </div>
-  </nav>
+    </nav>
+  </div>
 </header>
 
 <main>
+  <div class="page-intro">
+    <h1>Welcome to Shekar Krishnamoorthy<span style="color:var(--accent2)">.</span>com</h1>
+    <p>A small site running on a DigitalOcean droplet, served by Apache, and built one virtual host at a time.</p>
+  </div>
+
+  <aside class="card team-card" aria-labelledby="team-heading">
+    <h2 id="team-heading" class="note" style="text-transform:uppercase;letter-spacing:0.08em;margin:0 0 0.75rem">Team Members</h2>
+    <ul>
+      <li>
+        <span class="member-name">Shekar Krishnamoorthy</span>
+        <a class="btn-link" href="/members/shekarkrishnamoorthy.html">About Me</a>
+      </li>
+      <!-- Add one <li> per teammate, same pattern, each linking to /members/&lt;name&gt;.html -->
+    </ul>
+  </aside>
+
   <!--
     Picture placeholder: this inline illustration stands in for a real photo so
     nothing 404s before you upload one. To swap in an actual picture, replace

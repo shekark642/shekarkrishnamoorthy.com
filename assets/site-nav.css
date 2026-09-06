@@ -56,76 +56,63 @@ a { color: var(--accent); }
 .btn-link.secondary { background: var(--accent2); }
 .btn-link.secondary:hover { background: #be185d; }
 
-/* ---------- Shared dark banner ---------- */
-/* Use on any page:
-   <header class="banner"><div class="banner-inner">
-     <div class="welcome"><p class="eyebrow">...</p><h1>...</h1><p class="subtitle">...</p></div>
+/* ---------- Site-wide header ---------- */
+/* One simple bar, the same on every page across every subdomain - a short
+   fixed-text logo (never overflows) plus nav links, in a single row that
+   wraps on narrow screens instead of a giant hero heading that has to.
+   Use on any page:
+   <header class="site-header"><div class="site-header-inner">
+     <a class="logo" href="https://shekarkrishnamoorthy.com/">Shekar Krishnamoorthy</a>
+     <nav aria-label="Site sections">
+       <a class="active" href="https://shekarkrishnamoorthy.com/">Home</a>
+       <a href="https://collector.shekarkrishnamoorthy.com/">Collector</a>
+       <a href="https://reporting.shekarkrishnamoorthy.com/">Reporting</a>
+       <a href="https://test.shekarkrishnamoorthy.com/">Test</a>
+     </nav>
    </div></header>
-   Page-specific extras (e.g. the homepage's team-card) can be added inside
-   .banner-inner and styled in that page's own <style> block. */
-header.banner {
-  background: linear-gradient(120deg, #0f172a, #1e293b 60%, #0f172a);
+   Mark the current page's link with class="active"; absolute URLs
+   throughout since this crosses domains. */
+header.site-header {
+  background: #0f172a;
   color: #f1f5f9;
-  padding: 2.5rem 1.5rem 0;
 }
-.banner-inner {
+.site-header-inner {
   max-width: 1000px;
   margin: 0 auto;
-  padding-bottom: 2rem;
+  padding: 1rem 1.5rem;
   display: flex;
-  flex-wrap: wrap;
+  align-items: center;
   justify-content: space-between;
-  align-items: flex-start;
-  gap: 1.5rem;
+  flex-wrap: wrap;
+  gap: 0.8rem;
 }
-.welcome .eyebrow {
-  text-transform: uppercase;
-  letter-spacing: 0.15em;
-  font-size: 0.8rem;
-  color: #7dd3fc;
-  margin: 0 0 0.3rem;
+header.site-header .logo {
+  color: #ffffff;
+  text-decoration: none;
+  font-weight: 700;
+  font-size: 1.05rem;
 }
-.welcome h1 {
-  margin: 0 0 0.5rem;
-  font-size: clamp(1.4rem, 4.5vw, 2.6rem);
-  overflow-wrap: break-word;
-  word-break: break-word;
-  hyphens: auto;
-}
-.welcome h1 .dot { color: var(--accent2); }
-.welcome .subtitle {
-  margin: 0;
-  color: #cbd5e1;
-  max-width: 32rem;
-}
-
-/* ---------- Site-wide navbar ---------- */
-/* Sits directly below the dark banner (same element, no gap) on every page
-   across every subdomain, so a visitor can always jump between them. Mark
-   the current page's link with class="active"; absolute URLs throughout
-   since this crosses domains. */
-nav.site-nav {
-  background: #1e293b;
-  border-top: 1px solid rgba(255,255,255,0.08);
-}
-nav.site-nav .site-nav-inner {
-  max-width: 1000px;
-  margin: 0 auto;
-  padding: 0.75rem 1.5rem;
+header.site-header nav {
   display: flex;
-  gap: 1.6rem;
+  gap: 1.4rem;
   flex-wrap: wrap;
 }
-nav.site-nav a {
+header.site-header nav a {
   color: #cbd5e1;
   text-decoration: none;
-  font-size: 0.86rem;
+  font-size: 0.88rem;
   font-weight: 600;
-  padding-bottom: 0.2rem;
+  padding-bottom: 0.15rem;
   border-bottom: 2px solid transparent;
 }
-nav.site-nav a:hover { color: #ffffff; }
-nav.site-nav a.active { color: #ffffff; border-bottom-color: var(--accent); }
+header.site-header nav a:hover { color: #ffffff; }
+header.site-header nav a.active { color: #ffffff; border-bottom-color: var(--accent); }
+
+/* Simple page intro - a normal heading in the page flow, not a hero banner.
+   Use directly inside <main>: <div class="page-intro"><h1>...</h1><p>...</p></div> */
+.page-intro { margin-bottom: 2rem; }
+.page-intro h1 { margin: 0 0 0.4rem; font-size: 1.6rem; }
+.page-intro p { margin: 0; color: var(--muted); }
 
 /* Shared "site tour" prev/next navigation. */
 nav.page-nav {
