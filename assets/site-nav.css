@@ -39,6 +39,90 @@ a { color: var(--accent); }
 
 .note { font-size: 0.85rem; color: var(--muted); }
 
+/* General-purpose button link for use on light (non-banner) backgrounds. */
+.btn-link {
+  display: inline-block;
+  background: var(--accent);
+  color: #ffffff;
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 0.9rem;
+  padding: 0.55rem 1.1rem;
+  border-radius: 8px;
+  transition: background 0.2s ease;
+}
+.btn-link:hover { background: #0369a1; }
+.btn-link.secondary { background: var(--accent2); }
+.btn-link.secondary:hover { background: #be185d; }
+
+/* ---------- Shared dark banner ---------- */
+/* Use on any page:
+   <header class="banner"><div class="banner-inner">
+     <div class="welcome"><p class="eyebrow">...</p><h1>...</h1><p class="subtitle">...</p></div>
+   </div></header>
+   Page-specific extras (e.g. the homepage's team-card) can be added inside
+   .banner-inner and styled in that page's own <style> block. */
+header.banner {
+  background: linear-gradient(120deg, #0f172a, #1e293b 60%, #0f172a);
+  color: #f1f5f9;
+  padding: 2.5rem 1.5rem 0;
+}
+.banner-inner {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding-bottom: 2rem;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1.5rem;
+}
+.welcome .eyebrow {
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  font-size: 0.8rem;
+  color: #7dd3fc;
+  margin: 0 0 0.3rem;
+}
+.welcome h1 {
+  margin: 0 0 0.5rem;
+  font-size: clamp(1.8rem, 5vw, 2.6rem);
+}
+.welcome h1 .dot { color: var(--accent2); }
+.welcome .subtitle {
+  margin: 0;
+  color: #cbd5e1;
+  max-width: 32rem;
+}
+
+/* ---------- Site-wide navbar ---------- */
+/* Sits directly below the dark banner (same element, no gap) on every page
+   across every subdomain, so a visitor can always jump between them. Mark
+   the current page's link with class="active"; absolute URLs throughout
+   since this crosses domains. */
+nav.site-nav {
+  background: #1e293b;
+  border-top: 1px solid rgba(255,255,255,0.08);
+}
+nav.site-nav .site-nav-inner {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 0.75rem 1.5rem;
+  display: flex;
+  gap: 1.6rem;
+  flex-wrap: wrap;
+}
+nav.site-nav a {
+  color: #cbd5e1;
+  text-decoration: none;
+  font-size: 0.86rem;
+  font-weight: 600;
+  padding-bottom: 0.2rem;
+  border-bottom: 2px solid transparent;
+}
+nav.site-nav a:hover { color: #ffffff; }
+nav.site-nav a.active { color: #ffffff; border-bottom-color: var(--accent); }
+
 /* Shared "site tour" prev/next navigation. */
 nav.page-nav {
   display: flex;

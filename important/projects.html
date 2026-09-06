@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Projects — Shekar Krishnamoorthy</title>
+<link rel="stylesheet" href="/assets/site-nav.css">
+<style>
+  main { max-width: 1000px; margin: 0 auto; padding: 2.5rem 1.5rem 4rem; }
+  .card h2 { margin-top: 0; font-size: 1.1rem; }
+  .card p { color: var(--muted); }
+</style>
+</head>
+<body>
+
+<header class="banner">
+  <div class="banner-inner">
+    <div class="welcome">
+      <p class="eyebrow">Shekar Krishnamoorthy</p>
+      <h1>Projects<span class="dot">.</span></h1>
+      <p class="subtitle">A growing list of things built outside the graded homework log.</p>
+    </div>
+  </div>
+  <nav class="site-nav" aria-label="Site sections">
+    <div class="site-nav-inner">
+      <a class="active" href="https://shekarkrishnamoorthy.com/">Home</a>
+      <a href="https://collector.shekarkrishnamoorthy.com/">Collector</a>
+      <a href="https://reporting.shekarkrishnamoorthy.com/">Reporting</a>
+      <a href="https://test.shekarkrishnamoorthy.com/">Test</a>
+    </div>
+  </nav>
+</header>
+
+<main>
+  <div class="card">
+    <h2>Example project entry</h2>
+    <p>This page is a template for the <code>/important/</code> directory &mdash; a placeholder to demonstrate the pattern. Replace this card with a real project, or copy this file (<code>important/&lt;name&gt;.html</code>) for each new one and link it from the homepage's "Other Projects" section.</p>
+    <p id="liveNote" class="note"></p>
+  </div>
+</main>
+
+<script>
+  // Demonstrates this directory can hold JS-driven pages too, not just static ones.
+  document.getElementById("liveNote").textContent = "Page rendered at " + new Date().toLocaleString() + ".";
+</script>
+
+</body>
+</html>

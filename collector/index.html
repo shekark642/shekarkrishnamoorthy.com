@@ -1,61 +1,67 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Basic Website</title>
-  <link rel="stylesheet" href="/assets/site-nav.css">
-  <style>
-    .matomo-btn {
-      display: inline-block;
-      margin-top: 1rem;
-      background: #0284c7;
-      color: #ffffff;
-      text-decoration: none;
-      font-weight: 600;
-      font-size: 0.95rem;
-      padding: 0.6rem 1.2rem;
-      border-radius: 8px;
-    }
-    .matomo-btn:hover { background: #0369a1; }
-    .beacon-btn {
-      display: inline-block;
-      margin-top: 1rem;
-      margin-left: 0.6rem;
-      background: #db2777;
-      color: #ffffff;
-      text-decoration: none;
-      font-weight: 600;
-      font-size: 0.95rem;
-      padding: 0.6rem 1.2rem;
-      border-radius: 8px;
-    }
-    .beacon-btn:hover { background: #be185d; }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Collector — Shekar Krishnamoorthy</title>
+<link rel="stylesheet" href="/assets/site-nav.css">
+<style>
+  main { max-width: 1000px; margin: 0 auto; padding: 2.5rem 1.5rem 4rem; }
+  .card h2 { margin-top: 0; font-size: 1.1rem; }
+  .card p { color: var(--muted); }
+  .module-list { list-style: none; margin: 1rem 0 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 0.6rem; }
+  .module-list a {
+    display: block; text-decoration: none; color: var(--text); background: var(--bg);
+    border: 1px solid var(--border); border-radius: 8px; padding: 0.6rem 0.8rem; font-size: 0.88rem;
+  }
+  .module-list a:hover { background: #eef2f7; border-color: var(--accent); }
+</style>
 </head>
-
 <body>
-  <h1>Shekar's collector domain</h1>
-  <script>
-    document.write(`Live @ ${new Date()}`);
-  </script>
-  <p>
-    <a class="matomo-btn" href="/analytics/">Open Matomo Dashboard</a>
-    <a class="matomo-btn" href="https://test.shekarkrishnamoorthy.com/">Open test.shekarkrishnamoorthy.com</a>
-    <a class="beacon-btn" href="/test.html">HW3 Module 01: Beacon Test</a>
-    <a class="beacon-btn" href="/test-v2.html">HW3 Module 02: Technographics</a>
-    <a class="beacon-btn" href="/pixel.html">HW3 Module 03: Server-Log Pixel</a>
-    <a class="beacon-btn" href="/test-v3.html">HW3 Module 04: Custom Endpoint</a>
-    <a class="beacon-btn" href="/test-v4.html">HW3 Module 05: Performance Timing</a>
-    <a class="beacon-btn" href="/test-v5.html">HW3 Module 06: Web Vitals</a>
-    <a class="beacon-btn" href="/test-v6.html">HW3 Module 07: Error Tracking</a>
-    <a class="beacon-btn" href="/test-v7.html">HW3 Module 08: Configuration API</a>
-    <a class="beacon-btn" href="/test-v8.html">HW3 Module 09: Extensions &amp; Plugins</a>
-    <a class="beacon-btn" href="/test-v9.html">HW3 Module 10: Production Readiness</a>
-    <a class="beacon-btn" href="/loader.html">HW3 Module 10: Command Queue Loader</a>
-  </p>
+
+<header class="banner">
+  <div class="banner-inner">
+    <div class="welcome">
+      <p class="eyebrow">Welcome to</p>
+      <h1>Collector<span class="dot">.</span>shekarkrishnamoorthy.com</h1>
+      <p class="subtitle">Analytics collection script, tracking pixel, and the full HW3 Collector Tutorial demo pages.</p>
+    </div>
+  </div>
+  <nav class="site-nav" aria-label="Site sections">
+    <div class="site-nav-inner">
+      <a href="https://shekarkrishnamoorthy.com/">Home</a>
+      <a class="active" href="https://collector.shekarkrishnamoorthy.com/">Collector</a>
+      <a href="https://reporting.shekarkrishnamoorthy.com/">Reporting</a>
+      <a href="https://test.shekarkrishnamoorthy.com/">Test</a>
+    </div>
+  </nav>
+</header>
+
+<main>
+  <div class="card">
+    <h2>Analytics</h2>
+    <p>Self-hosted Matomo dashboard, tracking the main site.</p>
+    <a class="btn-link" href="/analytics/">Open Matomo Dashboard</a>
+  </div>
+
+  <div class="card">
+    <h2>Collector Tutorial — Modules 01&ndash;10</h2>
+    <p>Each module's demo page, in order, from the first beacon to a production-ready collector.</p>
+    <ul class="module-list">
+      <li><a href="/test.html">Module 01: Beacon Test</a></li>
+      <li><a href="/test-v2.html">Module 02: Technographics</a></li>
+      <li><a href="/pixel.html">Module 03: Server-Log Pixel</a></li>
+      <li><a href="/test-v3.html">Module 04: Custom Endpoint</a></li>
+      <li><a href="/test-v4.html">Module 05: Performance Timing</a></li>
+      <li><a href="/test-v5.html">Module 06: Web Vitals</a></li>
+      <li><a href="/test-v6.html">Module 07: Error Tracking</a></li>
+      <li><a href="/test-v7.html">Module 08: Configuration API</a></li>
+      <li><a href="/test-v8.html">Module 09: Extensions &amp; Plugins</a></li>
+      <li><a href="/test-v9.html">Module 10: Production Readiness</a></li>
+      <li><a href="/loader.html">Module 10: Command Queue Loader</a></li>
+    </ul>
+  </div>
+</main>
 
 </body>
-
 </html>

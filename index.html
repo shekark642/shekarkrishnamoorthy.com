@@ -15,41 +15,6 @@
 <script src="https://collector.shekarkrishnamoorthy.com/collector.js" async></script>
 <style>
 
-  /* ---------- Banner ---------- */
-  header.banner {
-    background: linear-gradient(120deg, #0f172a, #1e293b 60%, #0f172a);
-    color: #f1f5f9;
-    padding: 2.5rem 1.5rem;
-  }
-  .banner-inner {
-    max-width: 1000px;
-    margin: 0 auto;
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: space-between;
-    align-items: flex-start;
-    gap: 1.5rem;
-  }
-  .welcome .eyebrow {
-    text-transform: uppercase;
-    letter-spacing: 0.15em;
-    font-size: 0.8rem;
-    color: #7dd3fc;
-    margin: 0 0 0.3rem;
-  }
-  .welcome h1 {
-    margin: 0 0 0.5rem;
-    font-size: clamp(1.8rem, 5vw, 2.6rem);
-  }
-  .welcome h1 .dot {
-    color: var(--accent2);
-  }
-  .welcome .subtitle {
-    margin: 0;
-    color: #cbd5e1;
-    max-width: 32rem;
-  }
-
   .team-card {
     background: rgba(255,255,255,0.06);
     border: 1px solid rgba(255,255,255,0.15);
@@ -196,6 +161,14 @@
       </ul>
     </aside>
   </div>
+  <nav class="site-nav" aria-label="Site sections">
+    <div class="site-nav-inner">
+      <a class="active" href="https://shekarkrishnamoorthy.com/">Home</a>
+      <a href="https://collector.shekarkrishnamoorthy.com/">Collector</a>
+      <a href="https://reporting.shekarkrishnamoorthy.com/">Reporting</a>
+      <a href="https://test.shekarkrishnamoorthy.com/">Test</a>
+    </div>
+  </nav>
 </header>
 
 <main>
@@ -253,13 +226,24 @@
           <td><a href="/hw2/index.html">View demos</a></td>
         </tr>
         <tr>
-          <td>HW3 &mdash; TBD</td>
-          <td>Description goes here once assigned.</td>
-          <td><a href="#">Link</a></td>
+          <td>HW3 &mdash; Analytics Collector &amp; Reporting Pipeline</td>
+          <td>A JavaScript analytics collector, a MySQL-backed ingestion/reporting API, and three dashboard patterns (heavy-SQL, client-computed, and a live feed), all hosted on the collector subdomain.</td>
+          <td><a href="https://collector.shekarkrishnamoorthy.com/">View project</a></td>
+        </tr>
+        <tr>
+          <td>HW4 &mdash; Analytics Viz Platform</td>
+          <td>An authenticated reporting dashboard with user management, real charts, and a detailed report answering a specific performance question.</td>
+          <td><a href="https://reporting.shekarkrishnamoorthy.com/">View dashboard</a></td>
         </tr>
         <!-- Add one <tr> per assignment, same three-column pattern -->
       </tbody>
     </table>
+  </section>
+
+  <section class="homework-section" aria-labelledby="projects-heading">
+    <h2 id="projects-heading">Other Projects</h2>
+    <p class="note">More pages beyond the homework log, added as they're built.</p>
+    <p><a class="btn-link" href="/important/projects.html">Projects</a></p>
   </section>
 
   <nav class="page-nav" aria-label="Site tour">
@@ -274,6 +258,3 @@
 
 </body>
 </html>
-
-< deployed via git hook Fri Aug 28 03:18:25 UTC 2026 -->
-< webhook live Fri Aug 28 04:36:11 UTC 2026 -->
