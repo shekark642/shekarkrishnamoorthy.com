@@ -59,9 +59,9 @@ a { color: var(--accent); }
 
 /* ---------- Site-wide header ---------- */
 /* One simple bar, the same on every page across every subdomain: the
-   favicon pinned to the actual left corner of the page, primary links
-   and Reporting centered/right in the content column next to it,
-   wrapping naturally on narrow screens. Use on any page:
+   favicon pinned to the actual left corner of the page, all nav links
+   together in the content column next to it, wrapping naturally on
+   narrow screens. Use on any page:
    <header class="site-header">
      <img class="site-favicon" src="https://shekarkrishnamoorthy.com/favicon.svg" alt="" width="28" height="28">
      <div class="site-header-inner">
@@ -69,8 +69,6 @@ a { color: var(--accent); }
          <a class="active" href="https://shekarkrishnamoorthy.com/">Home</a>
          <a href="https://shekarkrishnamoorthy.com/important/projects.html">Projects</a>
          <a href="https://test.shekarkrishnamoorthy.com/">Music</a>
-       </nav>
-       <nav aria-label="Reporting">
          <a href="https://reporting.shekarkrishnamoorthy.com/">Reporting</a>
        </nav>
      </div>
@@ -96,7 +94,6 @@ header.site-header {
   margin: 0 auto;
   display: flex;
   align-items: center;
-  justify-content: space-between;
   flex-wrap: wrap;
   gap: 0.8rem;
 }
