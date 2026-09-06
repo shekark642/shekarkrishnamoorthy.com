@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Performance Report — Analytics</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.5.1/chart.umd.min.js"></script>
+<style>
+  body { font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif; background: #f8fafc; color: #0f172a; margin: 0; padding: 2rem 1.5rem 4rem; }
+  main { max-width: 900px; margin: 0 auto; }
+  header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 0.8rem; }
+  header h1 { font-size: 1.35rem; margin: 0 0 0.2rem; }
+  header p { margin: 0; color: #64748b; font-size: 0.85rem; }
+  nav a { color: #0284c7; text-decoration: none; font-size: 0.88rem; margin-left: 1.1rem; font-weight: 600; }
+
+  .card { background: #fff; border: 1px solid #dbe3ee; border-radius: 16px; padding: 1.6rem 1.9rem; margin-bottom: 1.5rem; }
+  .card h2 { font-size: 1.05rem; margin: 0 0 0.5rem; }
+  .card p { color: #334155; line-height: 1.55; font-size: 0.92rem; }
+
+  .question { background: #eff6ff; border: 1px solid #bfdbfe; color: #1e3a8a; border-radius: 10px; padding: 0.9rem 1.1rem; font-size: 0.95rem; font-weight: 600; margin-bottom: 1.5rem; }
+
+  .score-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.9rem; margin-bottom: 0.5rem; }
+  .score { border-radius: 12px; padding: 1rem; text-align: center; border: 1px solid #dbe3ee; }
+  .score .label { font-size: 0.72rem; color: #64748b; text-transform: uppercase; letter-spacing: 0.04em; }
+  .score .value { font-size: 1.4rem; font-weight: 700; margin: 0.2rem 0; }
+  .score .tag { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; padding: 0.1rem 0.5rem; border-radius: 999px; }
+  .tag.good { background: #dcfce7; color: #15803d; }
+  .tag.needsImprovement { background: #fef3c7; color: #92400e; }
+  .tag.poor { background: #fee2e2; color: #b91c1c; }
+  .tag.unknown { background: #e2e8f0; color: #475569; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+  th, td { text-align: left; padding: 0.5rem 0.6rem; border-bottom: 1px solid #eef2f7; }
+  th { color: #475569; font-weight: 600; }
+
+  a.back { color: #0284c7; display: inline-block; margin-top: 0.5rem; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div>
+      <h1>Detailed Report: Page Performance</h1>
+      <p>Welcome back, <strong id="welcomeName">...</strong>.</p>
+    </div>
+    <nav>
+      <a href="/index.html">&larr; Dashboard</a>
+      <a href="#" id="adminLink" style="display:none">User Management</a>
+      <a href="#" id="logoutLink">Log out</a>
+    </nav>
+  </header>
+
+  <div class="question">
+    Guiding question: Is the site loading fast enough, and are Core Web Vitals in a healthy range?
+  </div>
+
+  <div class="card">
+    <h2>Averages Across All Recorded Visits</h2>
+    <div class="score-grid" id="scoreGrid"></div>
+  </div>
+
+  <div class="card">
+    <h2>Load Time Distribution</h2>
+    <canvas id="histChart"></canvas>
+  </div>
+
+  <div class="card">
+    <h2>Individual Load Events</h2>
+    <table>
+      <thead><tr><th>Session</th><th>Total Load Time</th><th>Score</th><th>Server Time</th></tr></thead>
+      <tbody id="loadRows"></tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>Discussion</h2>
+    <p id="discussion">Loading...</p>
+  </div>
+
+  <a class="back" href="/index.html">&larr; Back to dashboard</a>
+</main>
+
+<script>
+(function () {
+  "use strict";
+
+  fetch("/auth/me").then(function (r) { return r.json(); }).then(function (me) {
+    document.getElementById("welcomeName").textContent = me.username;
+    if (me.isAdmin) {
+      var link = document.getElementById("adminLink");
+      link.style.display = "inline";
+      link.href = "/users.html";
+    }
+  });
+
+  document.getElementById("logoutLink").addEventListener("click", function (e) {
+    e.preventDefault();
+    fetch("/auth/logout", { method: "POST" }).then(function () { window.location.href = "/logout.html"; });
+  });
+
+  // Same thresholds collector.js itself uses to score Web Vitals, so a
+  // "good" label here means the same thing it means in the raw beacon data.
+  var THRESHOLDS = { loadTime: [1000, 3000], lcp: [2500, 4000], cls: [0.1, 0.25], inp: [200, 500] };
+  function scoreOf(metric, value) {
+    if (value === null || value === undefined) return "unknown";
+    var t = THRESHOLDS[metric];
+    if (value <= t[0]) return "good";
+    if (value <= t[1]) return "needsImprovement";
+    return "poor";
+  }
+  function scoreLabel(s) {
+    return s === "needsImprovement" ? "Needs Improvement" : s.charAt(0).toUpperCase() + s.slice(1);
+  }
+  function fmt(n) { return (n === null || n === undefined) ? null : Math.round(n * 100) / 100; }
+
+  function scoreCard(label, value, unit, metricKey) {
+    var s = scoreOf(metricKey, value);
+    var display = value === null || value === undefined ? "—" : fmt(value) + (unit || "");
+    return '<div class="score"><div class="label">' + label + '</div><div class="value">' + display + '</div>' +
+      '<span class="tag ' + s + '">' + scoreLabel(s) + '</span></div>';
+  }
+
+  fetch("/api/reports/summary").then(function (r) { return r.json(); }).then(function (data) {
+    var t = data.totals;
+    document.getElementById("scoreGrid").innerHTML =
+      scoreCard("Avg Load Time", t.avgLoadTimeMs, " ms", "loadTime") +
+      scoreCard("Avg LCP", t.avgLcp, " ms", "lcp") +
+      scoreCard("Avg CLS", t.avgCls, "", "cls") +
+      scoreCard("Avg INP", t.avgInp, " ms", "inp");
+
+    var loadScore = scoreOf("loadTime", t.avgLoadTimeMs);
+    var lcpScore = scoreOf("lcp", t.avgLcp);
+    var parts = [];
+    parts.push("Across " + t.totalEvents + " recorded events from " + t.uniqueSessions + " sessions, the average page load time is " +
+      (fmt(t.avgLoadTimeMs) !== null ? fmt(t.avgLoadTimeMs) + "ms" : "not yet measured") +
+      ", which scores as \"" + scoreLabel(loadScore) + "\".");
+    if (t.avgLcp !== null && t.avgLcp !== undefined) {
+      parts.push("Average Largest Contentful Paint is " + fmt(t.avgLcp) + "ms (\"" + scoreLabel(lcpScore) + "\").");
+    } else {
+      parts.push("No Web Vitals (LCP/CLS/INP) beacons have been recorded yet, so vitals health can't be assessed until visitors trigger a visibilitychange event (switching tabs or navigating away).");
+    }
+    if (loadScore === "good") {
+      parts.push("Answer: yes, the site is loading fast enough on average.");
+    } else if (loadScore === "needsImprovement") {
+      parts.push("Answer: load times are acceptable but have room to improve - worth investigating the slower individual visits in the table below.");
+    } else {
+      parts.push("Answer: load times are too slow on average and need attention.");
+    }
+    document.getElementById("discussion").textContent = parts.join(" ");
+  });
+
+  fetch("/api/events?type=load&limit=100").then(function (r) { return r.json(); }).then(function (rows) {
+    var times = rows.map(function (r) {
+      return r.payload && r.payload.performanceData ? r.payload.performanceData.totalLoadTimeMs : null;
+    }).filter(function (v) { return typeof v === "number"; });
+
+    // Histogram buckets - shows the shape of the distribution, which the
+    // dashboard's sequential trend line (Metric 2) does not.
+    var buckets = [
+      { label: "0-200ms", min: 0, max: 200 },
+      { label: "200-500ms", min: 200, max: 500 },
+      { label: "500-1000ms", min: 500, max: 1000 },
+      { label: "1000-2000ms", min: 1000, max: 2000 },
+      { label: "2000ms+", min: 2000, max: Infinity }
+    ];
+    var counts = buckets.map(function (b) {
+      return times.filter(function (t) { return t >= b.min && t < b.max; }).length;
+    });
+
+    new Chart(document.getElementById("histChart"), {
+      type: "bar",
+      data: {
+        labels: buckets.map(function (b) { return b.label; }),
+        datasets: [{ label: "Page Loads", data: counts, backgroundColor: "#0284c7" }]
+      },
+      options: { responsive: true, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } }
+    });
+
+    document.getElementById("loadRows").innerHTML = rows.map(function (r) {
+      var ms = r.payload && r.payload.performanceData ? r.payload.performanceData.totalLoadTimeMs : null;
+      var s = scoreOf("loadTime", ms);
+      return "<tr><td>" + (r.session_id || "") + "</td><td>" + (ms !== null ? ms + " ms" : "—") + "</td>" +
+        "<td><span class='tag " + s + "'>" + scoreLabel(s) + "</span></td><td>" + (r.server_timestamp || "") + "</td></tr>";
+    }).join("");
+  });
+})();
+</script>
+</body>
+</html>

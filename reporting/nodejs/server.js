@@ -542,6 +542,10 @@ app.get('/users.html', requireAdminPage, (req, res) => {
   res.sendFile(path.join(PAGES_DIR, 'users.html'));
 });
 
+app.get('/performance.html', requireAuthPage, (req, res) => {
+  res.sendFile(path.join(PAGES_DIR, 'performance.html'));
+});
+
 const PORT = process.env.PORT || 3011;
 app.listen(PORT, '127.0.0.1', () => {
   console.log(`Reporting API listening on 127.0.0.1:${PORT}`);
