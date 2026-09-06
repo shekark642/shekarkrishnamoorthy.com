@@ -41,18 +41,14 @@
   <div class="card">
     <h1>Interactive Explorer &mdash; Light Server Query, Client Computes</h1>
     <p>The server does the minimum work here: a filtered, bounded <code>GET /api/events</code> query. Everything after that &mdash; the summary stats, the expandable rows &mdash; is computed and rendered in the browser from the raw rows.</p>
-    <div class="skeleton-note">Skeleton page: works for any event type this database has ever stored, from any site. Before rendering, this page checks the response size against a threshold and refuses to render (rather than freezing the tab) if it's too big for a browser to handle comfortably &mdash; try a small limit first.</div>
+    <div class="skeleton-note">Not locked to the collector's own event types or fields: type any type string this table has ever stored (blank = all), and any dot-path into the payload to compute min/max/avg on &mdash; works for whatever kind of data ends up here later, not just page-load beacons. Before rendering, this page checks the response size against a threshold and refuses to render (rather than freezing the tab) if it's too big &mdash; try a small limit first.</div>
     <div class="field-row">
-      <select id="typeFilter">
-        <option value="">All types</option>
-        <option value="load">load</option>
-        <option value="activity">activity</option>
-        <option value="vitals">vitals</option>
-        <option value="enter">enter</option>
-        <option value="exit">exit</option>
-      </select>
+      <input type="text" id="typeFilter" placeholder="Type filter (blank = all), e.g. load">
       <label>Limit: <input type="number" id="limitInput" value="50" min="1" max="1000"></label>
       <button id="loadBtn">Load Data</button>
+    </div>
+    <div class="field-row">
+      <input type="text" id="fieldPath" value="payload.performanceData.totalLoadTimeMs" placeholder="Dot-path to a numeric field, e.g. payload.vitals.lcp.value">
     </div>
     <div id="warnBox"></div>
   </div>
@@ -104,20 +100,37 @@
     });
   }
 
+  // Resolves a dot-path like "payload.vitals.lcp.value" against a row object.
+  // Not tied to any particular event shape - whatever path the user types
+  // is what gets walked, so this works for any field on any kind of data.
+  function resolvePath(obj, path) {
+    var parts = path.split(".");
+    var cur = obj;
+    for (var i = 0; i < parts.length; i++) {
+      if (cur === null || cur === undefined) return undefined;
+      cur = cur[parts[i]];
+    }
+    return cur;
+  }
+
   function render(rows) {
-    // Client-side computation demo: pull out totalLoadTimeMs wherever this
-    // batch of rows happens to carry it, and compute min/max/avg here in
-    // the browser rather than asking the server to do it.
-    var loadTimes = rows
-      .map(function (r) { return r.payload && r.payload.performanceData && r.payload.performanceData.totalLoadTimeMs; })
-      .filter(function (v) { return typeof v === "number"; });
+    var fieldPath = document.getElementById("fieldPath").value.trim();
+
+    // Client-side computation demo: pull out whatever field the user asked
+    // for wherever this batch of rows happens to carry it, and compute
+    // min/max/avg here in the browser rather than asking the server to do it.
+    var values = fieldPath
+      ? rows.map(function (r) { return resolvePath(r, fieldPath); }).filter(function (v) { return typeof v === "number"; })
+      : [];
 
     var statHtml = stat("Rows Loaded", rows.length);
-    if (loadTimes.length) {
-      var min = Math.min.apply(null, loadTimes);
-      var max = Math.max.apply(null, loadTimes);
-      var avg = Math.round(loadTimes.reduce(function (a, b) { return a + b; }, 0) / loadTimes.length);
-      statHtml += stat("Min Load Time", min + " ms") + stat("Max Load Time", max + " ms") + stat("Avg Load Time", avg + " ms");
+    if (fieldPath && values.length) {
+      var min = Math.min.apply(null, values);
+      var max = Math.max.apply(null, values);
+      var avg = Math.round((values.reduce(function (a, b) { return a + b; }, 0) / values.length) * 100) / 100;
+      statHtml += stat("Min " + fieldPath, min) + stat("Max " + fieldPath, max) + stat("Avg " + fieldPath, avg);
+    } else if (fieldPath) {
+      statHtml += stat("Matches for " + fieldPath, 0);
     }
     document.getElementById("statGrid").innerHTML = statHtml;
 

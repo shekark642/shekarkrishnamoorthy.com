@@ -213,15 +213,29 @@ app.delete('/api/events/:id', async (req, res) => {
 });
 
 // GET /api/reports/summary - the "heavy SQL, static visualization" pattern:
-// every number here is computed in MySQL (COUNT/AVG/GROUP BY against the
-// indexed generated columns), so the response is already the finished
-// answer - a dashboard just renders it, no client-side computation needed
-// no matter how many rows are behind it.
+// every number here is computed in MySQL (COUNT/AVG/GROUP BY), so the
+// response is already the finished answer - a dashboard just renders it,
+// no client-side computation needed no matter how many rows are behind it.
+//
+// This isn't limited to analytics-shaped data. The four indexed generated
+// columns (total_load_time_ms, lcp_value, cls_value, inp_value) are fast
+// paths for the metrics the collector happens to produce today, but
+// ?metricPath=&metricAgg= let you aggregate ANY numeric field out of ANY
+// row's JSON payload, whatever type of data ends up in this table later -
+// a contact-form submission, a custom app event, anything with a `type`
+// and a JSON `payload`. Only an allowlisted aggregate function is
+// accepted, and the JSON path is passed as a bound parameter (not string-
+// interpolated), so this stays injection-safe even though it's arbitrary.
 //
 // ?urlPrefix= scopes the report to one site/page (e.g.
 // https://shekarkrishnamoorthy.com/) without assuming there's only ever
 // one - omit it to summarize every site this database has ever collected
-// for, which is what makes this reusable if more sites start posting here.
+// for. ?groupBy= chooses what the breakdown counts by (type by default,
+// or session_id / url) - again so this isn't locked to one shape of data.
+const ALLOWED_AGG = ['avg', 'sum', 'min', 'max', 'count'];
+const ALLOWED_GROUP_BY = ['type', 'session_id', 'url'];
+const JSON_PATH_RE = /^\$(\.[A-Za-z0-9_]+|\[\d+\])*$/; // e.g. $.vitals.lcp.value
+
 app.get('/api/reports/summary', async (req, res) => {
   const where = [];
   const params = [];
@@ -230,6 +244,8 @@ app.get('/api/reports/summary', async (req, res) => {
     params.push(req.query.urlPrefix + '%');
   }
   const whereSql = where.length ? 'WHERE ' + where.join(' AND ') : '';
+
+  const groupBy = ALLOWED_GROUP_BY.includes(req.query.groupBy) ? req.query.groupBy : 'type';
 
   try {
     const [[totals]] = await dbPool.query(
@@ -243,11 +259,34 @@ app.get('/api/reports/summary', async (req, res) => {
        FROM events ${whereSql}`,
       params
     );
-    const [byType] = await dbPool.query(
-      `SELECT type, COUNT(*) AS count FROM events ${whereSql} GROUP BY type ORDER BY count DESC`,
+
+    const [byGroup] = await dbPool.query(
+      `SELECT ${groupBy} AS \`key\`, COUNT(*) AS count FROM events ${whereSql}
+       GROUP BY ${groupBy} ORDER BY count DESC LIMIT 50`,
       params
     );
-    res.json({ totals, byType });
+
+    let customMetric = null;
+    const metricPath = req.query.metricPath;
+    const metricAgg = (req.query.metricAgg || 'avg').toLowerCase();
+    if (typeof metricPath === 'string' && metricPath) {
+      if (!JSON_PATH_RE.test(metricPath)) {
+        return res.status(400).json({ error: 'metricPath must look like a JSON path, e.g. $.vitals.lcp.value' });
+      }
+      if (!ALLOWED_AGG.includes(metricAgg)) {
+        return res.status(400).json({ error: 'metricAgg must be one of: ' + ALLOWED_AGG.join(', ') });
+      }
+      const aggSql = metricAgg === 'count'
+        ? 'COUNT(payload->>?)'
+        : `${metricAgg.toUpperCase()}(CAST(payload->>? AS DOUBLE))`;
+      const [[row]] = await dbPool.query(
+        `SELECT ${aggSql} AS value FROM events ${whereSql}`,
+        [metricPath, ...params]
+      );
+      customMetric = { path: metricPath, agg: metricAgg, value: row.value };
+    }
+
+    res.json({ totals, groupBy, byGroup, customMetric });
   } catch (err) {
     console.error('[GET /api/reports/summary] error:', err.message);
     res.status(500).json({ error: 'database error' });

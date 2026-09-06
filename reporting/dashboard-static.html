@@ -10,14 +10,19 @@
   main { max-width: 760px; margin: 0 auto; }
   .card { background: #fff; border: 1px solid #dbe3ee; border-radius: 16px; padding: 1.75rem 2rem; margin-bottom: 1.5rem; }
   h1 { font-size: 1.4rem; margin-bottom: 0.4rem; }
+  h2 { font-size: 1.05rem; }
   p { color: #475569; line-height: 1.5; }
   code { background: #eef2f7; padding: 0.1rem 0.4rem; border-radius: 4px; }
   .skeleton-note { background: #eff6ff; border: 1px solid #bfdbfe; color: #1d4ed8; border-radius: 8px; padding: 0.7rem 0.9rem; font-size: 0.85rem; margin-bottom: 1.5rem; }
+  .err { background: #fef2f2; border: 1px solid #fecaca; color: #b91c1c; border-radius: 8px; padding: 0.7rem 0.9rem; font-size: 0.85rem; margin-top: 0.8rem; }
 
-  .field-row { display: flex; gap: 0.6rem; align-items: center; }
-  input[type="text"] { flex: 1; padding: 0.5rem 0.7rem; border: 1px solid #dbe3ee; border-radius: 8px; font-size: 0.9rem; }
+  .field-row { display: flex; gap: 0.6rem; align-items: center; flex-wrap: wrap; margin-bottom: 0.6rem; }
+  .field-row:last-child { margin-bottom: 0; }
+  input[type="text"] { flex: 1; min-width: 160px; padding: 0.5rem 0.7rem; border: 1px solid #dbe3ee; border-radius: 8px; font-size: 0.9rem; }
+  select { padding: 0.5rem 0.7rem; border: 1px solid #dbe3ee; border-radius: 8px; font-size: 0.9rem; }
   button { border: none; border-radius: 8px; padding: 0.55rem 1.1rem; background: #0284c7; color: #fff; font-weight: 600; cursor: pointer; font-size: 0.88rem; }
   button:hover { background: #0369a1; }
+  label.mini { font-size: 0.8rem; color: #475569; }
 
   .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 0.9rem; margin-top: 1rem; }
   .stat { border: 1px solid #dbe3ee; border-radius: 10px; padding: 0.9rem; text-align: center; }
@@ -25,7 +30,7 @@
   .stat .value { font-size: 1.4rem; font-weight: 700; margin-top: 0.2rem; }
 
   .bar-row { display: flex; align-items: center; gap: 0.7rem; margin: 0.4rem 0; font-size: 0.85rem; }
-  .bar-label { width: 110px; color: #334155; flex-shrink: 0; }
+  .bar-label { width: 160px; color: #334155; flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .bar-track { flex: 1; background: #eef2f7; border-radius: 5px; height: 14px; overflow: hidden; }
   .bar-fill { height: 100%; background: linear-gradient(90deg, #0284c7, #db2777); }
   .bar-count { width: 40px; text-align: right; font-family: ui-monospace, Consolas, monospace; }
@@ -37,19 +42,40 @@
 <main>
   <div class="card">
     <h1>Static Report &mdash; Heavy SQL, Server-Side</h1>
-    <p>Every number on this page is computed in MySQL (<code>COUNT</code>/<code>AVG</code>/<code>GROUP BY</code>, using the indexed generated columns) via <code>GET /api/reports/summary</code>. This page only draws the finished numbers &mdash; no computation happens in the browser, so it stays fast no matter how large the underlying table gets.</p>
-    <div class="skeleton-note">Skeleton page: works for any site posting through <code>/collect</code>, not just this one. Leave the filter blank for all sites, or scope it to one with a URL prefix.</div>
+    <p>Every number on this page is computed in MySQL (<code>COUNT</code>/<code>AVG</code>/<code>GROUP BY</code>) via <code>GET /api/reports/summary</code>. This page only draws the finished numbers &mdash; no computation happens in the browser.</p>
+    <div class="skeleton-note">Not locked to the collector's own metrics: group the breakdown by type, session, or URL, and aggregate <em>any</em> numeric field out of any row's JSON payload &mdash; whatever kind of data ends up in this table later, not just page-load beacons.</div>
+
     <div class="field-row">
       <input type="text" id="urlPrefix" placeholder="Optional: filter by URL prefix, e.g. https://shekarkrishnamoorthy.com/">
+      <label class="mini">Group by
+        <select id="groupBy">
+          <option value="type">type</option>
+          <option value="session_id">session_id</option>
+          <option value="url">url</option>
+        </select>
+      </label>
+    </div>
+    <div class="field-row">
+      <input type="text" id="metricPath" placeholder="Optional: any JSON path, e.g. $.vitals.lcp.value or $.myCustomField">
+      <label class="mini">Aggregate
+        <select id="metricAgg">
+          <option value="avg">avg</option>
+          <option value="sum">sum</option>
+          <option value="min">min</option>
+          <option value="max">max</option>
+          <option value="count">count</option>
+        </select>
+      </label>
       <button id="loadBtn">Load Report</button>
     </div>
+    <div id="errBox"></div>
   </div>
 
   <div class="card" id="resultsCard" style="display:none">
-    <h2 style="font-size:1.05rem;margin-top:0">Totals</h2>
+    <h2 style="margin-top:0">Totals</h2>
     <div class="stat-grid" id="statGrid"></div>
-    <h2 style="font-size:1.05rem">Events by Type</h2>
-    <div id="byTypeBars"></div>
+    <h2 id="groupHeading">Events by Type</h2>
+    <div id="byGroupBars"></div>
   </div>
 
   <a class="back" href="/index.html">&larr; Back to reporting home</a>
@@ -67,29 +93,52 @@
 
   function load() {
     var prefix = document.getElementById("urlPrefix").value.trim();
-    var url = API + (prefix ? "?urlPrefix=" + encodeURIComponent(prefix) : "");
+    var groupBy = document.getElementById("groupBy").value;
+    var metricPath = document.getElementById("metricPath").value.trim();
+    var metricAgg = document.getElementById("metricAgg").value;
+    var errBox = document.getElementById("errBox");
+    errBox.innerHTML = "";
 
-    fetch(url).then(function (r) { return r.json(); }).then(function (data) {
+    var qs = new URLSearchParams();
+    if (prefix) qs.set("urlPrefix", prefix);
+    qs.set("groupBy", groupBy);
+    if (metricPath) { qs.set("metricPath", metricPath); qs.set("metricAgg", metricAgg); }
+
+    fetch(API + "?" + qs.toString()).then(function (r) {
+      return r.json().then(function (body) { return { ok: r.ok, body: body }; });
+    }).then(function (res) {
+      if (!res.ok) {
+        errBox.innerHTML = '<div class="err">' + res.body.error + '</div>';
+        document.getElementById("resultsCard").style.display = "none";
+        return;
+      }
+      var data = res.body;
       var t = data.totals;
-      document.getElementById("statGrid").innerHTML =
+      var statHtml =
         stat("Total Events", t.totalEvents) +
         stat("Unique Sessions", t.uniqueSessions) +
         stat("Avg Load Time", fmt(t.avgLoadTimeMs) + " ms") +
         stat("Avg LCP", fmt(t.avgLcp) + " ms") +
         stat("Avg CLS", fmt(t.avgCls)) +
         stat("Avg INP", fmt(t.avgInp) + " ms");
+      if (data.customMetric) {
+        statHtml += stat(data.customMetric.agg + "(" + data.customMetric.path + ")", fmt(data.customMetric.value));
+      }
+      document.getElementById("statGrid").innerHTML = statHtml;
 
-      var maxCount = Math.max.apply(null, data.byType.map(function (r) { return r.count; }).concat([1]));
-      document.getElementById("byTypeBars").innerHTML = data.byType.map(function (row) {
+      document.getElementById("groupHeading").textContent = "Events by " + data.groupBy;
+      var maxCount = Math.max.apply(null, data.byGroup.map(function (r) { return r.count; }).concat([1]));
+      document.getElementById("byGroupBars").innerHTML = data.byGroup.map(function (row) {
         var pct = Math.round((row.count / maxCount) * 100);
-        return '<div class="bar-row"><span class="bar-label">' + row.type + '</span>' +
+        var label = row.key === null ? "(none)" : String(row.key);
+        return '<div class="bar-row"><span class="bar-label" title="' + label + '">' + label + '</span>' +
           '<span class="bar-track"><span class="bar-fill" style="width:' + pct + '%"></span></span>' +
           '<span class="bar-count">' + row.count + '</span></div>';
       }).join("");
 
       document.getElementById("resultsCard").style.display = "block";
     }).catch(function (err) {
-      alert("Failed to load report: " + err.message);
+      errBox.innerHTML = '<div class="err">Failed to load report: ' + err.message + '</div>';
     });
   }
 
@@ -98,7 +147,7 @@
   }
 
   document.getElementById("loadBtn").addEventListener("click", load);
-  load(); // load the all-sites summary immediately
+  load(); // load the all-sites, group-by-type summary immediately
 })();
 </script>
 </body>
