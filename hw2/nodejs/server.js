@@ -462,6 +462,37 @@ function appendToJsonlFallback(payload, reason) {
   });
 }
 
+// --- Live stream (Server-Sent Events) ---
+//
+// A dashboard can subscribe here and see every beacon the instant /collect
+// receives it, with no MySQL round trip in the viewing path at all - the
+// broadcast happens before the DB write is even attempted, so a slow or
+// failed insert never delays or blocks the live view. This is generic
+// across every site whose collector script posts here, not just one page:
+// any beacon from any origin shows up for any connected viewer.
+const sseClients = new Set();
+
+app.get('/collect/stream', (req, res) => {
+  res.set({
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    Connection: 'keep-alive'
+  });
+  res.flushHeaders();
+  res.write(': connected\n\n'); // comment line - opens the stream immediately
+
+  sseClients.add(res);
+  req.on('close', () => sseClients.delete(res));
+});
+
+function broadcastLive(payload) {
+  if (!sseClients.size) return;
+  const line = `data: ${JSON.stringify(payload)}\n\n`;
+  for (const client of sseClients) {
+    client.write(line);
+  }
+}
+
 app.post('/collect', async (req, res) => {
   const payload = req.body;
 
@@ -478,6 +509,8 @@ app.post('/collect', async (req, res) => {
   // Keeping both lets you detect clock skew later.
   payload.serverTimestamp = new Date().toISOString();
   payload.ip = req.ip;
+
+  broadcastLive(payload);
 
   try {
     await dbPool.execute(

@@ -212,6 +212,48 @@ app.delete('/api/events/:id', async (req, res) => {
   }
 });
 
+// GET /api/reports/summary - the "heavy SQL, static visualization" pattern:
+// every number here is computed in MySQL (COUNT/AVG/GROUP BY against the
+// indexed generated columns), so the response is already the finished
+// answer - a dashboard just renders it, no client-side computation needed
+// no matter how many rows are behind it.
+//
+// ?urlPrefix= scopes the report to one site/page (e.g.
+// https://shekarkrishnamoorthy.com/) without assuming there's only ever
+// one - omit it to summarize every site this database has ever collected
+// for, which is what makes this reusable if more sites start posting here.
+app.get('/api/reports/summary', async (req, res) => {
+  const where = [];
+  const params = [];
+  if (typeof req.query.urlPrefix === 'string' && req.query.urlPrefix) {
+    where.push('url LIKE ?');
+    params.push(req.query.urlPrefix + '%');
+  }
+  const whereSql = where.length ? 'WHERE ' + where.join(' AND ') : '';
+
+  try {
+    const [[totals]] = await dbPool.query(
+      `SELECT
+         COUNT(*) AS totalEvents,
+         COUNT(DISTINCT session_id) AS uniqueSessions,
+         AVG(total_load_time_ms) AS avgLoadTimeMs,
+         AVG(lcp_value) AS avgLcp,
+         AVG(cls_value) AS avgCls,
+         AVG(inp_value) AS avgInp
+       FROM events ${whereSql}`,
+      params
+    );
+    const [byType] = await dbPool.query(
+      `SELECT type, COUNT(*) AS count FROM events ${whereSql} GROUP BY type ORDER BY count DESC`,
+      params
+    );
+    res.json({ totals, byType });
+  } catch (err) {
+    console.error('[GET /api/reports/summary] error:', err.message);
+    res.status(500).json({ error: 'database error' });
+  }
+});
+
 const PORT = process.env.PORT || 3011;
 app.listen(PORT, '127.0.0.1', () => {
   console.log(`Reporting API listening on 127.0.0.1:${PORT}`);

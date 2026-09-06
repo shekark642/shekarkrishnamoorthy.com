@@ -6,6 +6,21 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Basic Website</title>
   <link rel="stylesheet" href="/assets/site-nav.css">
+  <style>
+    .report-btn {
+      display: inline-block;
+      margin-top: 1rem;
+      margin-right: 0.6rem;
+      background: #0284c7;
+      color: #ffffff;
+      text-decoration: none;
+      font-weight: 600;
+      font-size: 0.95rem;
+      padding: 0.6rem 1.2rem;
+      border-radius: 8px;
+    }
+    .report-btn:hover { background: #0369a1; }
+  </style>
 </head>
 
 <body>
@@ -13,6 +28,11 @@
   <script>
     document.write(`Live @ ${new Date()}`);
   </script>
+  <p>
+    <a class="report-btn" href="/dashboard-static.html">Static Report (Heavy SQL)</a>
+    <a class="report-btn" href="/dashboard-interactive.html">Interactive Explorer</a>
+    <a class="report-btn" href="/dashboard-live.html">Live Feed (bypasses DB)</a>
+  </p>
 
 </body>
 

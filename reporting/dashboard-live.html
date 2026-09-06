@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Live Feed (Bypasses the Database)</title>
+<link rel="stylesheet" href="/assets/site-nav.css">
+<style>
+  body { font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif; background: #f8fafc; color: #0f172a; margin: 0; padding: 2.5rem 1.5rem 4rem; }
+  main { max-width: 760px; margin: 0 auto; }
+  .card { background: #fff; border: 1px solid #dbe3ee; border-radius: 16px; padding: 1.75rem 2rem; margin-bottom: 1.5rem; }
+  h1 { font-size: 1.4rem; margin-bottom: 0.4rem; }
+  p { color: #475569; line-height: 1.5; }
+  code { background: #eef2f7; padding: 0.1rem 0.4rem; border-radius: 4px; }
+  .skeleton-note { background: #eff6ff; border: 1px solid #bfdbfe; color: #1d4ed8; border-radius: 8px; padding: 0.7rem 0.9rem; font-size: 0.85rem; margin-bottom: 1.5rem; }
+
+  .status-row { display: flex; align-items: center; gap: 0.6rem; font-size: 0.88rem; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: #cbd5e1; }
+  .dot.live { background: #16a34a; }
+  .dot.down { background: #dc2626; }
+  .count { font-family: ui-monospace, Consolas, monospace; color: #475569; }
+
+  #feed { list-style: none; margin: 1rem 0 0; padding: 0; font-size: 0.8rem; max-height: 480px; overflow-y: auto; }
+  #feed li { border: 1px solid #dbe3ee; border-radius: 8px; padding: 0.55rem 0.8rem; margin-bottom: 0.5rem; }
+  #feed .tag { display: inline-block; font-size: 0.66rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; padding: 0.1rem 0.45rem; border-radius: 999px; background: #dcfce7; color: #15803d; margin-right: 0.4rem; }
+  #feed pre { margin: 0.35rem 0 0; white-space: pre-wrap; word-break: break-word; }
+  #emptyFeed { color: #94a3b8; font-style: italic; }
+
+  a.back { color: #0284c7; display: inline-block; margin-top: 0.5rem; }
+</style>
+</head>
+<body>
+<main>
+  <div class="card">
+    <h1>Live Feed &mdash; Bypasses the Database</h1>
+    <p>This page holds a Server-Sent Events connection directly to <code>/collect</code> on the collector's own server. Every beacon is broadcast to connected viewers the instant it's received &mdash; before, and independent of, whatever happens with the MySQL write. Nothing on this page ever queries the database.</p>
+    <div class="skeleton-note">Skeleton page: the stream is not scoped to one site &mdash; every beacon from every collector script hitting <code>/collect</code>, from any origin, shows up here in real time.</div>
+    <div class="status-row">
+      <span class="dot" id="statusDot"></span>
+      <span id="statusText">Connecting...</span>
+      <span class="count">(<span id="eventCount">0</span> events this session)</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2 style="font-size:1.05rem;margin-top:0">Live Events</h2>
+    <p id="emptyFeed">Waiting for the next beacon anywhere on the site...</p>
+    <ul id="feed"></ul>
+  </div>
+
+  <a class="back" href="/index.html">&larr; Back to reporting home</a>
+</main>
+
+<script>
+(function () {
+  "use strict";
+  var STREAM_URL = "https://shekarkrishnamoorthy.com/collect/stream";
+  var MAX_FEED_ITEMS = 100;
+  var count = 0;
+
+  var statusDot = document.getElementById("statusDot");
+  var statusText = document.getElementById("statusText");
+  var feed = document.getElementById("feed");
+  var emptyFeed = document.getElementById("emptyFeed");
+
+  var source = new EventSource(STREAM_URL);
+
+  source.onopen = function () {
+    statusDot.className = "dot live";
+    statusText.textContent = "Live";
+  };
+
+  source.onerror = function () {
+    statusDot.className = "dot down";
+    statusText.textContent = "Disconnected (retrying...)";
+  };
+
+  source.onmessage = function (e) {
+    var payload;
+    try {
+      payload = JSON.parse(e.data);
+    } catch (err) {
+      return;
+    }
+
+    if (statusDot.className !== "dot live") {
+      statusDot.className = "dot live";
+      statusText.textContent = "Live";
+    }
+
+    count++;
+    document.getElementById("eventCount").textContent = count;
+    emptyFeed.style.display = "none";
+
+    var li = document.createElement("li");
+    li.innerHTML =
+      '<span class="tag">' + payload.type + '</span>' +
+      '<strong>' + (payload.url || "") + '</strong>' +
+      '<pre>' + JSON.stringify(payload, null, 2).replace(/</g, "&lt;") + '</pre>';
+    feed.insertBefore(li, feed.firstChild);
+
+    while (feed.children.length > MAX_FEED_ITEMS) {
+      feed.removeChild(feed.lastChild);
+    }
+  };
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Interactive Explorer (Server + Client)</title>
+<link rel="stylesheet" href="/assets/site-nav.css">
+<style>
+  body { font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif; background: #f8fafc; color: #0f172a; margin: 0; padding: 2.5rem 1.5rem 4rem; }
+  main { max-width: 860px; margin: 0 auto; }
+  .card { background: #fff; border: 1px solid #dbe3ee; border-radius: 16px; padding: 1.75rem 2rem; margin-bottom: 1.5rem; }
+  h1 { font-size: 1.4rem; margin-bottom: 0.4rem; }
+  p { color: #475569; line-height: 1.5; }
+  code { background: #eef2f7; padding: 0.1rem 0.4rem; border-radius: 4px; }
+  .skeleton-note { background: #eff6ff; border: 1px solid #bfdbfe; color: #1d4ed8; border-radius: 8px; padding: 0.7rem 0.9rem; font-size: 0.85rem; margin-bottom: 1.5rem; }
+  .warn { background: #fff7ed; border: 1px solid #fed7aa; color: #9a3412; border-radius: 8px; padding: 0.7rem 0.9rem; font-size: 0.85rem; margin-top: 1rem; }
+
+  .field-row { display: flex; gap: 0.6rem; align-items: center; flex-wrap: wrap; }
+  input, select { padding: 0.5rem 0.7rem; border: 1px solid #dbe3ee; border-radius: 8px; font-size: 0.9rem; }
+  input[type="number"] { width: 100px; }
+  button { border: none; border-radius: 8px; padding: 0.55rem 1.1rem; background: #0284c7; color: #fff; font-weight: 600; cursor: pointer; font-size: 0.88rem; }
+  button:hover { background: #0369a1; }
+
+  .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 0.9rem; margin-top: 1rem; }
+  .stat { border: 1px solid #dbe3ee; border-radius: 10px; padding: 0.9rem; text-align: center; }
+  .stat .label { font-size: 0.75rem; color: #64748b; text-transform: uppercase; letter-spacing: 0.04em; }
+  .stat .value { font-size: 1.3rem; font-weight: 700; margin-top: 0.2rem; }
+
+  table { width: 100%; border-collapse: collapse; margin-top: 1rem; font-size: 0.82rem; }
+  th, td { text-align: left; padding: 0.45rem 0.6rem; border-bottom: 1px solid #eef2f7; vertical-align: top; }
+  tr.row { cursor: pointer; }
+  tr.row:hover { background: #f8fafc; }
+  pre.detail { background: #0f172a; color: #e2e8f0; padding: 0.7rem 0.9rem; border-radius: 8px; font-size: 0.75rem; white-space: pre-wrap; word-break: break-word; margin: 0.3rem 0 0.8rem; display: none; }
+  pre.detail.open { display: block; }
+
+  a.back { color: #0284c7; display: inline-block; margin-top: 0.5rem; }
+</style>
+</head>
+<body>
+<main>
+  <div class="card">
+    <h1>Interactive Explorer &mdash; Light Server Query, Client Computes</h1>
+    <p>The server does the minimum work here: a filtered, bounded <code>GET /api/events</code> query. Everything after that &mdash; the summary stats, the expandable rows &mdash; is computed and rendered in the browser from the raw rows.</p>
+    <div class="skeleton-note">Skeleton page: works for any event type this database has ever stored, from any site. Before rendering, this page checks the response size against a threshold and refuses to render (rather than freezing the tab) if it's too big for a browser to handle comfortably &mdash; try a small limit first.</div>
+    <div class="field-row">
+      <select id="typeFilter">
+        <option value="">All types</option>
+        <option value="load">load</option>
+        <option value="activity">activity</option>
+        <option value="vitals">vitals</option>
+        <option value="enter">enter</option>
+        <option value="exit">exit</option>
+      </select>
+      <label>Limit: <input type="number" id="limitInput" value="50" min="1" max="1000"></label>
+      <button id="loadBtn">Load Data</button>
+    </div>
+    <div id="warnBox"></div>
+  </div>
+
+  <div class="card" id="resultsCard" style="display:none">
+    <h2 style="font-size:1.05rem;margin-top:0">Computed client-side from the raw rows</h2>
+    <div class="stat-grid" id="statGrid"></div>
+    <table>
+      <thead><tr><th>ID</th><th>Type</th><th>Session</th><th>URL</th><th>Server Time</th></tr></thead>
+      <tbody id="tableBody"></tbody>
+    </table>
+  </div>
+
+  <a class="back" href="/index.html">&larr; Back to reporting home</a>
+</main>
+
+<script>
+(function () {
+  "use strict";
+  var API = "https://reporting.shekarkrishnamoorthy.com/api/events";
+  // Feasibility thresholds - a browser can chart a few hundred rows fine,
+  // but there's no point pretending it can smoothly handle ten thousand
+  // without pagination/virtualization it doesn't have yet.
+  var MAX_ROWS = 500;
+  var MAX_BYTES = 400 * 1024;
+
+  function load() {
+    var type = document.getElementById("typeFilter").value;
+    var limit = document.getElementById("limitInput").value || 50;
+    var url = API + "?limit=" + encodeURIComponent(limit) + (type ? "&type=" + encodeURIComponent(type) : "");
+    var warnBox = document.getElementById("warnBox");
+    warnBox.innerHTML = "";
+
+    fetch(url).then(function (r) { return r.text(); }).then(function (text) {
+      var byteSize = new Blob([text]).size;
+      var rows = JSON.parse(text);
+
+      if (rows.length > MAX_ROWS || byteSize > MAX_BYTES) {
+        warnBox.innerHTML = '<div class="warn">Response too large to render safely (' + rows.length +
+          ' rows, ' + Math.round(byteSize / 1024) + 'KB). Lower the limit and try again ' +
+          '&mdash; refusing to render rather than freezing the tab.</div>';
+        document.getElementById("resultsCard").style.display = "none";
+        return;
+      }
+
+      render(rows);
+    }).catch(function (err) {
+      warnBox.innerHTML = '<div class="warn">Failed to load: ' + err.message + '</div>';
+    });
+  }
+
+  function render(rows) {
+    // Client-side computation demo: pull out totalLoadTimeMs wherever this
+    // batch of rows happens to carry it, and compute min/max/avg here in
+    // the browser rather than asking the server to do it.
+    var loadTimes = rows
+      .map(function (r) { return r.payload && r.payload.performanceData && r.payload.performanceData.totalLoadTimeMs; })
+      .filter(function (v) { return typeof v === "number"; });
+
+    var statHtml = stat("Rows Loaded", rows.length);
+    if (loadTimes.length) {
+      var min = Math.min.apply(null, loadTimes);
+      var max = Math.max.apply(null, loadTimes);
+      var avg = Math.round(loadTimes.reduce(function (a, b) { return a + b; }, 0) / loadTimes.length);
+      statHtml += stat("Min Load Time", min + " ms") + stat("Max Load Time", max + " ms") + stat("Avg Load Time", avg + " ms");
+    }
+    document.getElementById("statGrid").innerHTML = statHtml;
+
+    var tbody = document.getElementById("tableBody");
+    tbody.innerHTML = "";
+    rows.forEach(function (row) {
+      var tr = document.createElement("tr");
+      tr.className = "row";
+      tr.innerHTML =
+        "<td>" + row.id + "</td><td>" + row.type + "</td><td>" + (row.session_id || "") + "</td>" +
+        "<td>" + (row.url || "") + "</td><td>" + (row.server_timestamp || "") + "</td>";
+
+      var detailRow = document.createElement("tr");
+      var detailCell = document.createElement("td");
+      detailCell.colSpan = 5;
+      var pre = document.createElement("pre");
+      pre.className = "detail";
+      pre.textContent = JSON.stringify(row.payload, null, 2);
+      detailCell.appendChild(pre);
+      detailRow.appendChild(detailCell);
+
+      tr.addEventListener("click", function () { pre.classList.toggle("open"); });
+
+      tbody.appendChild(tr);
+      tbody.appendChild(detailRow);
+    });
+
+    document.getElementById("resultsCard").style.display = "block";
+  }
+
+  function stat(label, value) {
+    return '<div class="stat"><div class="label">' + label + '</div><div class="value">' + value + '</div></div>';
+  }
+
+  document.getElementById("loadBtn").addEventListener("click", load);
+  load();
+})();
+</script>
+</body>
+</html>
