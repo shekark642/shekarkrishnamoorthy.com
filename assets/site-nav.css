@@ -59,52 +59,46 @@ a { color: var(--accent); }
 
 /* ---------- Site-wide header ---------- */
 /* One simple bar, the same on every page across every subdomain: the
-   favicon + primary links grouped on the left, Reporting alone on the
-   right, wrapping naturally on narrow screens. Use on any page:
-   <header class="site-header"><div class="site-header-inner">
-     <div class="site-header-left">
-       <a class="site-favicon" href="https://shekarkrishnamoorthy.com/" aria-label="Home">
-         <img src="https://shekarkrishnamoorthy.com/favicon.svg" alt="" width="28" height="28">
-       </a>
+   favicon pinned to the actual left corner of the page, primary links
+   and Reporting centered/right in the content column next to it,
+   wrapping naturally on narrow screens. Use on any page:
+   <header class="site-header">
+     <img class="site-favicon" src="https://shekarkrishnamoorthy.com/favicon.svg" alt="" width="28" height="28">
+     <div class="site-header-inner">
        <nav aria-label="Primary">
          <a class="active" href="https://shekarkrishnamoorthy.com/">Home</a>
          <a href="https://shekarkrishnamoorthy.com/important/projects.html">Projects</a>
          <a href="https://test.shekarkrishnamoorthy.com/">Music</a>
        </nav>
+       <nav aria-label="Reporting">
+         <a href="https://reporting.shekarkrishnamoorthy.com/">Reporting</a>
+       </nav>
      </div>
-     <nav aria-label="Reporting">
-       <a href="https://reporting.shekarkrishnamoorthy.com/">Reporting</a>
-     </nav>
-   </div></header>
-   Mark the current page's link with class="active"; absolute URLs
-   throughout since this crosses domains. */
+   </header>
+   The favicon is a plain image, not a link. Mark the current page's link
+   with class="active"; absolute URLs throughout since this crosses domains. */
 header.site-header {
   background: #0f172a;
   color: #f1f5f9;
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  padding: 1rem 1.5rem;
+}
+.site-favicon {
+  display: block;
+  border-radius: 50%;
+  flex-shrink: 0;
 }
 .site-header-inner {
+  flex: 1;
   max-width: 1000px;
   margin: 0 auto;
-  padding: 1rem 1.5rem;
   display: flex;
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 0.8rem;
-}
-.site-header-left {
-  display: flex;
-  align-items: center;
-  gap: 1.2rem;
-  flex-wrap: wrap;
-}
-.site-header-left .site-favicon {
-  display: flex;
-  line-height: 0;
-}
-.site-header-left .site-favicon img {
-  display: block;
-  border-radius: 50%;
 }
 header.site-header nav {
   display: flex;
