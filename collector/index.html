@@ -4,7 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Collector — Shekar Krishnamoorthy</title>
-<link rel="stylesheet" href="/assets/site-nav.css">
+<!-- Cross-origin: this subdomain has its own separate document root, so a
+     relative /assets/ path would 404 here - the shared stylesheet only
+     physically exists under the main site's public_html. -->
+<link rel="stylesheet" href="https://shekarkrishnamoorthy.com/assets/site-nav.css">
 <style>
   main { max-width: 1000px; margin: 0 auto; padding: 2.5rem 1.5rem 4rem; }
   .card h2 { margin-top: 0; font-size: 1.1rem; }
