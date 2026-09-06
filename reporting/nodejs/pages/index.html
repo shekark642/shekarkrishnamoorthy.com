@@ -1,5 +1,172 @@
 <!DOCTYPE html>
 <html lang="en">
-<head><meta charset="UTF-8"><title>Dashboard placeholder</title></head>
-<body><h1>Dashboard coming next</h1></body>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard — Analytics</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<style>
+  body { font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif; background: #f8fafc; color: #0f172a; margin: 0; padding: 2rem 1.5rem 4rem; }
+  main { max-width: 980px; margin: 0 auto; }
+  header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 0.8rem; }
+  header h1 { font-size: 1.35rem; margin: 0 0 0.2rem; }
+  header p { margin: 0; color: #64748b; font-size: 0.85rem; }
+  nav a { color: #0284c7; text-decoration: none; font-size: 0.88rem; margin-left: 1.1rem; font-weight: 600; }
+
+  .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.9rem; margin-bottom: 1.5rem; }
+  .stat { background: #fff; border: 1px solid #dbe3ee; border-radius: 12px; padding: 1rem; text-align: center; }
+  .stat .label { font-size: 0.72rem; color: #64748b; text-transform: uppercase; letter-spacing: 0.04em; }
+  .stat .value { font-size: 1.5rem; font-weight: 700; margin-top: 0.2rem; }
+
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-bottom: 1.5rem; }
+  @media (max-width: 760px) { .grid-2 { grid-template-columns: 1fr; } }
+  .card { background: #fff; border: 1px solid #dbe3ee; border-radius: 16px; padding: 1.5rem 1.75rem; }
+  .card h2 { font-size: 1rem; margin: 0 0 0.9rem; }
+  .card canvas { max-height: 260px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+  th, td { text-align: left; padding: 0.5rem 0.6rem; border-bottom: 1px solid #eef2f7; }
+  th { color: #475569; font-weight: 600; }
+  td.mono { font-family: ui-monospace, Consolas, monospace; font-size: 0.78rem; }
+
+  .cta-row { display: flex; gap: 0.8rem; margin-top: 1.5rem; flex-wrap: wrap; }
+  .btn { display: inline-block; border: none; border-radius: 8px; padding: 0.65rem 1.2rem; background: #0284c7; color: #fff; font-weight: 600; text-decoration: none; font-size: 0.88rem; cursor: pointer; }
+  .btn:hover { background: #0369a1; }
+  .btn.secondary { background: #e2e8f0; color: #0f172a; }
+  .btn.secondary:hover { background: #cbd5e1; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div>
+      <h1>Analytics Dashboard</h1>
+      <p>Welcome back, <strong id="welcomeName">...</strong>.</p>
+    </div>
+    <nav>
+      <a href="#" id="adminLink" style="display:none">User Management</a>
+      <a href="#" id="logoutLink">Log out</a>
+    </nav>
+  </header>
+
+  <div class="stat-grid" id="statGrid"></div>
+
+  <div class="grid-2">
+    <div class="card">
+      <h2>Metric 1: Events by Type</h2>
+      <canvas id="typeChart"></canvas>
+    </div>
+    <div class="card">
+      <h2>Metric 2: Page Load Time Trend (last 20 loads)</h2>
+      <canvas id="loadTimeChart"></canvas>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Metric 3: Recent Activity</h2>
+    <table>
+      <thead><tr><th>Type</th><th>Session</th><th>URL</th><th>Server Time</th></tr></thead>
+      <tbody id="recentRows"></tbody>
+    </table>
+  </div>
+
+  <div class="cta-row">
+    <a class="btn" href="/performance.html">Generate Detailed Report &rarr;</a>
+  </div>
+</main>
+
+<script>
+(function () {
+  "use strict";
+
+  fetch("/auth/me").then(function (r) { return r.json(); }).then(function (me) {
+    document.getElementById("welcomeName").textContent = me.username;
+    if (me.isAdmin) {
+      var link = document.getElementById("adminLink");
+      link.style.display = "inline";
+      link.href = "/users.html";
+    }
+  });
+
+  document.getElementById("logoutLink").addEventListener("click", function (e) {
+    e.preventDefault();
+    fetch("/auth/logout", { method: "POST" }).then(function () {
+      window.location.href = "/logout.html";
+    });
+  });
+
+  function stat(label, value) {
+    return '<div class="stat"><div class="label">' + label + '</div><div class="value">' + value + '</div></div>';
+  }
+  function fmt(n) {
+    if (n === null || n === undefined) return "—";
+    return Math.round(n * 100) / 100;
+  }
+
+  // --- Metric 1: Events by Type (bar chart - categorical comparison) ---
+  fetch("/api/reports/summary?groupBy=type").then(function (r) { return r.json(); }).then(function (data) {
+    var t = data.totals;
+    document.getElementById("statGrid").innerHTML =
+      stat("Total Events", t.totalEvents) +
+      stat("Unique Sessions", t.uniqueSessions) +
+      stat("Avg Load Time", fmt(t.avgLoadTimeMs) + " ms") +
+      stat("Avg LCP", fmt(t.avgLcp) + " ms");
+
+    new Chart(document.getElementById("typeChart"), {
+      type: "bar",
+      data: {
+        labels: data.byGroup.map(function (r) { return r.key; }),
+        datasets: [{
+          label: "Events",
+          data: data.byGroup.map(function (r) { return r.count; }),
+          backgroundColor: "#0284c7"
+        }]
+      },
+      options: {
+        responsive: true,
+        plugins: { legend: { display: false } },
+        scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }
+      }
+    });
+  });
+
+  // --- Metric 2: Load Time Trend (line chart - values over time/sequence) ---
+  fetch("/api/events?type=load&limit=20").then(function (r) { return r.json(); }).then(function (rows) {
+    var ordered = rows.slice().reverse(); // oldest to newest, left to right
+    var labels = ordered.map(function (r, i) { return "#" + (i + 1); });
+    var values = ordered.map(function (r) {
+      return r.payload && r.payload.performanceData ? r.payload.performanceData.totalLoadTimeMs : null;
+    });
+
+    new Chart(document.getElementById("loadTimeChart"), {
+      type: "line",
+      data: {
+        labels: labels,
+        datasets: [{
+          label: "Total Load Time (ms)",
+          data: values,
+          borderColor: "#db2777",
+          backgroundColor: "rgba(219,39,119,0.1)",
+          tension: 0.3,
+          fill: true
+        }]
+      },
+      options: {
+        responsive: true,
+        plugins: { legend: { display: false } },
+        scales: { y: { beginAtZero: true } }
+      }
+    });
+  });
+
+  // --- Metric 3: Recent Activity (grid - individual record inspection) ---
+  fetch("/api/events?limit=15").then(function (r) { return r.json(); }).then(function (rows) {
+    document.getElementById("recentRows").innerHTML = rows.map(function (r) {
+      return "<tr><td>" + r.type + "</td><td class='mono'>" + (r.session_id || "") + "</td>" +
+        "<td class='mono'>" + (r.url || "") + "</td><td class='mono'>" + (r.server_timestamp || "") + "</td></tr>";
+    }).join("");
+  });
+})();
+</script>
+</body>
 </html>
