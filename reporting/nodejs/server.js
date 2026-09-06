@@ -2,6 +2,7 @@ const express = require('express');
 const mysql = require('mysql2/promise');
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
+const path = require('path');
 
 const app = express();
 app.disable('x-powered-by');
@@ -510,6 +511,35 @@ app.delete('/api/users/:id', requireAdminApi, async (req, res) => {
     console.error('[DELETE /api/users/:id] error:', err.message);
     res.status(500).json({ error: 'database error' });
   }
+});
+
+// --- Page serving ---
+//
+// Apache proxies the entire vhost here now (not just /api/ and /auth/), so
+// this app owns serving every page - which is what lets login actually be
+// enforced server-side instead of just hiding a link client-side. The pages
+// live in ./pages, outside anything Apache would otherwise serve as a
+// static file directly (deploy-site.sh excludes /nodejs from the rsync into
+// public_html), so res.sendFile is the only way they're reachable.
+const PAGES_DIR = path.join(__dirname, 'pages');
+
+app.get('/', (req, res) => res.redirect(req.session ? '/index.html' : '/login.html'));
+
+app.get('/login.html', (req, res) => {
+  if (req.session) return res.redirect('/index.html'); // already signed in
+  res.sendFile(path.join(PAGES_DIR, 'login.html'));
+});
+
+app.get('/logout.html', (req, res) => {
+  res.sendFile(path.join(PAGES_DIR, 'logout.html'));
+});
+
+app.get('/index.html', requireAuthPage, (req, res) => {
+  res.sendFile(path.join(PAGES_DIR, 'index.html'));
+});
+
+app.get('/users.html', requireAdminPage, (req, res) => {
+  res.sendFile(path.join(PAGES_DIR, 'users.html'));
 });
 
 const PORT = process.env.PORT || 3011;

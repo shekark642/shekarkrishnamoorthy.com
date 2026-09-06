@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Login — Analytics Dashboard</title>
+<style>
+  body {
+    margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif; background: #f8fafc; color: #0f172a;
+  }
+  .card { background: #fff; border: 1px solid #dbe3ee; border-radius: 16px; padding: 2.5rem; width: 100%; max-width: 380px; }
+  h1 { font-size: 1.3rem; margin: 0 0 0.4rem; }
+  p.sub { color: #64748b; font-size: 0.88rem; margin: 0 0 1.5rem; }
+  label { display: block; font-size: 0.85rem; font-weight: 600; color: #334155; margin-bottom: 0.3rem; }
+  input { width: 100%; padding: 0.6rem 0.8rem; border: 1px solid #dbe3ee; border-radius: 8px; font-size: 0.95rem; box-sizing: border-box; margin-bottom: 1rem; }
+  button { width: 100%; border: none; border-radius: 8px; padding: 0.7rem; background: #0284c7; color: #fff; font-weight: 600; cursor: pointer; font-size: 0.95rem; }
+  button:hover { background: #0369a1; }
+  .err { background: #fef2f2; border: 1px solid #fecaca; color: #b91c1c; border-radius: 8px; padding: 0.6rem 0.8rem; font-size: 0.85rem; margin-bottom: 1rem; display: none; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>Analytics Dashboard</h1>
+  <p class="sub">Sign in to view your reports.</p>
+  <div class="err" id="errBox"></div>
+  <form id="loginForm">
+    <label for="usernameOrEmail">Username or Email</label>
+    <input type="text" id="usernameOrEmail" autocomplete="username" required>
+    <label for="password">Password</label>
+    <input type="password" id="password" autocomplete="current-password" required>
+    <button type="submit">Log In</button>
+  </form>
+</div>
+<script>
+(function () {
+  "use strict";
+  document.getElementById("loginForm").addEventListener("submit", function (e) {
+    e.preventDefault();
+    var errBox = document.getElementById("errBox");
+    errBox.style.display = "none";
+
+    fetch("/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        usernameOrEmail: document.getElementById("usernameOrEmail").value,
+        password: document.getElementById("password").value
+      })
+    }).then(function (r) {
+      return r.json().then(function (body) { return { ok: r.ok, body: body }; });
+    }).then(function (res) {
+      if (!res.ok) {
+        errBox.textContent = res.body.error || "Login failed.";
+        errBox.style.display = "block";
+        return;
+      }
+      window.location.href = "/index.html";
+    }).catch(function (err) {
+      errBox.textContent = "Login failed: " + err.message;
+      errBox.style.display = "block";
+    });
+  });
+})();
+</script>
+</body>
+</html>
