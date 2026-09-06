@@ -46,6 +46,23 @@ function parseId(req, res) {
   return id;
 }
 
+// Same 50KB cap /collect already enforces - this API can be hit directly
+// (not just through collector.js), so it needs the same guard against an
+// oversized payload landing straight in the JSON column unchecked.
+const MAX_PAYLOAD_BYTES = 50 * 1024;
+
+function checkPayload(payload) {
+  if (payload === undefined) return { ok: true };
+  if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) {
+    return { ok: false, status: 400, error: 'payload must be a JSON object' };
+  }
+  const size = Buffer.byteLength(JSON.stringify(payload), 'utf8');
+  if (size > MAX_PAYLOAD_BYTES) {
+    return { ok: false, status: 413, error: 'payload too large (max 50KB)' };
+  }
+  return { ok: true };
+}
+
 // GET /api/events - every entry, optionally filtered by ?type= and/or
 // ?session=, paginated with ?limit=&offset= (default 100 / 0).
 app.get('/api/events', async (req, res) => {
@@ -107,6 +124,10 @@ app.post('/api/events', async (req, res) => {
   if (typeof body.type !== 'string' || !body.type) {
     return res.status(400).json({ error: 'type is required' });
   }
+  const payloadCheck = checkPayload(body.payload);
+  if (!payloadCheck.ok) {
+    return res.status(payloadCheck.status).json({ error: payloadCheck.error });
+  }
 
   try {
     const [result] = await dbPool.execute(
@@ -139,6 +160,11 @@ app.put('/api/events/:id', async (req, res) => {
   if (id === null) return;
 
   const body = req.body || {};
+  const payloadCheck = checkPayload(body.payload);
+  if (!payloadCheck.ok) {
+    return res.status(payloadCheck.status).json({ error: payloadCheck.error });
+  }
+
   const fields = [];
   const params = [];
 
