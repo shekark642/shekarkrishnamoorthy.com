@@ -1463,11 +1463,27 @@ app.get('/api/behavioral/project-click-sequence', requireSectionApi('behavioral'
     clickRows.forEach((r) => {
       (bySession[r.session_id] = bySession[r.session_id] || []).push({ projectTitle: r.projectTitle, timestamp: r.ts });
     });
+
+    // Last recorded moment on the Projects page itself (any event type, not
+    // just clicks) for each of these sessions - lets the frontend show how
+    // long they stuck around after their last click, not just the gaps
+    // between clicks.
+    const [lastSeenRows] = await dbPool.query(
+      `SELECT session_id, MAX(COALESCE(client_timestamp, server_timestamp)) AS lastSeenOnPage
+       FROM events
+       WHERE url = 'https://shekarkrishnamoorthy.com/important/projects.html' AND session_id IN (${placeholders})
+       GROUP BY session_id`,
+      ids
+    );
+    const lastSeenBySession = {};
+    lastSeenRows.forEach((r) => { lastSeenBySession[r.session_id] = r.lastSeenOnPage; });
+
     const userNumberByIp = await lookupUserNumbers(sessionRows.map((r) => r.ip));
     res.json(sessionRows.map((r) => ({
       session_id: r.session_id,
       userNumber: r.ip ? (userNumberByIp[r.ip] ?? null) : null,
-      clicks: bySession[r.session_id] || []
+      clicks: bySession[r.session_id] || [],
+      lastSeenOnPage: lastSeenBySession[r.session_id] || null
     })));
   } catch (err) {
     console.error('[GET /api/behavioral/project-click-sequence] error:', err.message);

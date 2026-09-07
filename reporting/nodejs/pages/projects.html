@@ -163,9 +163,22 @@
         return gap +
           '<span class="seq-step">' + (i + 1) + ". " + esc(c.projectTitle) + "</span>";
       }).join("");
+      // How long they stuck around on the page after their last click -
+      // not another gap between two clicks, so it's appended after the
+      // path rather than folded into the arrow chain above.
+      var stayedAfter = "";
+      if (r.lastSeenOnPage && r.clicks.length) {
+        var lastClickTs = r.clicks[r.clicks.length - 1].timestamp;
+        var afterSecs = Math.round((new Date(r.lastSeenOnPage) - new Date(lastClickTs)) / 1000);
+        if (afterSecs > 0) {
+          stayedAfter = '<span class="seq-gap">Stayed ' + fmtDuration(afterSecs) + ' after the last click</span>';
+        }
+      }
       return '<div class="sequence-row"><div class="sess">' + esc(r.session_id.slice(0, 14)) +
         ' &middot; ' + (r.userNumber ? "User " + r.userNumber : "—") + '</div>' +
-        '<div class="sequence-path">' + path + "</div></div>";
+        '<div class="sequence-path">' + path + "</div>" +
+        (stayedAfter ? '<div style="margin-top:0.35rem">' + stayedAfter + "</div>" : "") +
+        "</div>";
     }).join("");
   });
 })();
