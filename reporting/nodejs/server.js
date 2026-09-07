@@ -707,6 +707,45 @@ app.get('/api/performance/page-comparison', requireSectionApi('performance'), as
   }
 });
 
+// GET /api/performance/slowest-events?limit=20 - the N individual 'load'
+// events with the highest total_load_time_ms, each identified by session,
+// user (the same IP-based "User N" pseudonym used everywhere else), and
+// page - a quick "what's actually been slow, and for whom" list to sit
+// next to page-comparison's averages, which can hide a single very bad
+// visit inside an otherwise fine average. Same reporting.* exclusion as
+// page-comparison, for the same reason (tracking removed from those pages
+// - see anonymizeOldIps's neighboring comments for the fuller version).
+// Scoring (good/needs improvement/poor) is left to the frontend, which
+// already carries the exact thresholds performance.html scores by - no
+// reason to duplicate that table server-side.
+app.get('/api/performance/slowest-events', requireSectionApi('performance'), async (req, res) => {
+  const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 20, 1), 100);
+  try {
+    const [rows] = await dbPool.query(
+      `SELECT session_id, ip, url, total_load_time_ms AS totalLoadTimeMs,
+              COALESCE(client_timestamp, server_timestamp) AS timestamp
+       FROM events
+       WHERE type = 'load' AND total_load_time_ms IS NOT NULL
+         AND url NOT LIKE 'https://reporting.shekarkrishnamoorthy.com/%'
+       ORDER BY total_load_time_ms DESC
+       LIMIT ?`,
+      [limit]
+    );
+    const userNumberByIp = await lookupUserNumbers(rows.map((r) => r.ip));
+    res.json(rows.map((r) => ({
+      session_id: r.session_id,
+      ip: r.ip,
+      userNumber: r.ip ? (userNumberByIp[r.ip] ?? null) : null,
+      url: r.url,
+      totalLoadTimeMs: r.totalLoadTimeMs,
+      timestamp: r.timestamp
+    })));
+  } catch (err) {
+    console.error('[GET /api/performance/slowest-events] error:', err.message);
+    res.status(500).json({ error: 'database error' });
+  }
+});
+
 // GET /api/behavioral/summary - type breakdown + totals across everything
 // that isn't a page-load event.
 app.get('/api/behavioral/summary', requireSectionApi('behavioral'), async (req, res) => {

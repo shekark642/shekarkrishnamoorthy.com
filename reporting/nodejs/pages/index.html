@@ -28,6 +28,14 @@
   .card canvas { max-height: 260px; }
   #siteComparisonWrap { height: 340px; }
   .no-access { color: #94a3b8; font-size: 0.85rem; font-style: italic; }
+  .empty { color: #94a3b8; font-size: 0.85rem; font-style: italic; }
+  .table-wrap { overflow-x: auto; }
+  td.num { text-align: right; }
+  .tag { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; padding: 0.1rem 0.5rem; border-radius: 999px; }
+  .tag.good { background: #dcfce7; color: #15803d; }
+  .tag.needsImprovement { background: #fef3c7; color: #92400e; }
+  .tag.poor { background: #fee2e2; color: #b91c1c; }
+  .tag.unknown { background: #e2e8f0; color: #475569; }
 
   table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
   th, td { text-align: left; padding: 0.5rem 0.6rem; border-bottom: 1px solid #eef2f7; }
@@ -77,7 +85,7 @@
   </div>
 
   <div class="card">
-    <h2>Page Load Time Trend (performance, last 50 users)</h2>
+    <h2>Page Load Time Trend (performance, last 100 users)</h2>
     <div id="loadTimeChartWrap"><canvas id="loadTimeChart"></canvas></div>
   </div>
 
@@ -85,6 +93,9 @@
     <h2>Actual vs. Expected Load Time by Page</h2>
     <p style="margin:-0.4rem 0 0.9rem;color:#64748b;font-size:0.82rem">Average real load time per tracked page, next to an estimated baseline for a basic machine/connection based on how many resources that page actually fetches. Pages are discovered automatically - a newly tracked page just starts showing up here.</p>
     <div id="siteComparisonWrap"><canvas id="siteComparisonChart"></canvas></div>
+    <h2 style="margin-top:1.6rem">20 Longest Load Events</h2>
+    <p style="margin:-0.4rem 0 0.9rem;color:#64748b;font-size:0.82rem">The averages above can hide a single very slow visit - these are the actual individual events, worst first.</p>
+    <div class="table-wrap" id="slowestWrap"><p class="empty">Loading...</p></div>
   </div>
 
   <div class="card">
@@ -213,7 +224,7 @@
   }, function () { renderStats(); });
 
   // --- Page Load Time Trend (line chart - values over time/sequence) ---
-  fetchScoped("/api/performance/events?limit=50", function (rows) {
+  fetchScoped("/api/performance/events?limit=100", function (rows) {
     var ordered = rows.slice().reverse(); // oldest to newest, left to right
     var labels = ordered.map(function (r, i) { return "#" + (i + 1); });
     var values = ordered.map(function (r) { return r.total_load_time_ms; });
@@ -290,6 +301,38 @@
       }
     });
   }, function () { noAccess("siteComparisonWrap", "performance"); });
+
+  // --- 20 Longest Load Events ---
+  //
+  // Same scoring thresholds performance.html's detailed report uses, so a
+  // "Good"/"Needs Improvement"/"Poor" tag here means exactly what it means
+  // there - not a second, silently different scale.
+  var LOAD_TIME_THRESHOLDS = [1000, 3000];
+  function loadTimeScore(ms) {
+    if (ms === null || ms === undefined) return "unknown";
+    if (ms <= LOAD_TIME_THRESHOLDS[0]) return "good";
+    if (ms <= LOAD_TIME_THRESHOLDS[1]) return "needsImprovement";
+    return "poor";
+  }
+  function scoreLabel(s) {
+    return s === "needsImprovement" ? "Needs Improvement" : s.charAt(0).toUpperCase() + s.slice(1);
+  }
+  fetchScoped("/api/performance/slowest-events?limit=20", function (rows) {
+    if (!rows.length) {
+      document.getElementById("slowestWrap").innerHTML = '<p class="empty">No load events recorded yet.</p>';
+      return;
+    }
+    var head = "<tr><th>Session</th><th>User</th><th>Page</th><th>Load Time</th><th>Score</th></tr>";
+    var body = rows.map(function (r) {
+      var s = loadTimeScore(r.totalLoadTimeMs);
+      return "<tr><td class='mono'>" + esc(r.session_id.slice(0, 12)) + "</td>" +
+        "<td>" + fmtUser(r.userNumber) + "</td>" +
+        "<td class='mono'>" + esc((r.url || "").replace(/^https?:\/\//, "")) + "</td>" +
+        "<td class='num'>" + r.totalLoadTimeMs + " ms</td>" +
+        "<td><span class='tag " + s + "'>" + scoreLabel(s) + "</span></td></tr>";
+    }).join("");
+    document.getElementById("slowestWrap").innerHTML = "<table><thead>" + head + "</thead><tbody>" + body + "</tbody></table>";
+  }, function () { noAccess("slowestWrap", "performance"); });
 
   // --- Sessions (cross-referenced - one row per session, not per event) ---
   function fmtDuration(secs) {
