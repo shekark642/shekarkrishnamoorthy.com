@@ -869,7 +869,16 @@ app.get('/api/behavioral/distinct-users', requireAuthApi, async (req, res) => {
        LIMIT ?`,
       [limit]
     );
-    res.json(rows);
+    // Raw IPs on this table are super_admin only - masked (not omitted, so
+    // the column still lines up and User N/session counts stay visible) for
+    // everyone else. Done here, not left to the frontend to hide, since a
+    // client can always just read whatever the response body already
+    // contains - the real IP must never leave the server for a role that
+    // isn't allowed to see it.
+    const out = req.session.role === 'super_admin'
+      ? rows
+      : rows.map((r) => ({ ...r, ip: 'xxx.xxx.xxx.xxx' }));
+    res.json(out);
   } catch (err) {
     console.error('[GET /api/behavioral/distinct-users] error:', err.message);
     res.status(500).json({ error: 'database error' });
