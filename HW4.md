@@ -3,13 +3,22 @@
 
 **Site URL:** https://reporting.shekarkrishnamoorthy.com/
 
-**Grader login (basic):**
-- Username or email: `grader_basic` (or `grader_basic@example.com`)
-- Password: `GraderBasic2026!`
+Superadmin username: shekar Password: Bababa55555
+Analyst username: analyst Password: AnalystPassword
+Viewer username: viewer Password: password
 
-**Grader login (admin):**
-- Username or email: `grader_admin` (or `grader_admin@example.com`)
-- Password: `GraderAdmin2026!`
+
+**Superadmin login:**
+- Username: `shekar`
+- Password: `Bababa55555`
+
+**Analyst login:**
+- Username: `analyst`
+- Password: `AnalystPassword`
+
+**Viewer login:**
+- Username: `viewer`
+- Password: `password`
 
 ### Authentication
 
