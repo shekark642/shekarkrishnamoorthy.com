@@ -3,23 +3,6 @@
 
 **Site URL:** https://reporting.shekarkrishnamoorthy.com/
 
-Superadmin username: shekar Password: Bababa55555
-Analyst username: analyst Password: AnalystPassword
-Viewer username: viewer Password: password
-
-
-**Superadmin login:**
-- Username: `shekar`
-- Password: `Bababa55555`
-
-**Analyst login:**
-- Username: `analyst`
-- Password: `AnalystPassword`
-
-**Viewer login:**
-- Username: `viewer`
-- Password: `password`
-
 ### Authentication
 
 Auth is hand-rolled in Node/Express rather than a third-party library
