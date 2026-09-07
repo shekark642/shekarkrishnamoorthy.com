@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>News — Shekar Krishnamoorthy</title>
+<meta name="description" content="Live top headlines from NewsAPI, filterable by category and sortable by popularity or date.">
+<link rel="icon" type="image/svg+xml" href="https://shekarkrishnamoorthy.com/favicon.svg">
+<link rel="stylesheet" href="https://shekarkrishnamoorthy.com/assets/site-nav.css">
+<style>
+  main { max-width: 1000px; margin: 0 auto; padding: 2.5rem 1.5rem 4rem; }
+
+  #controls { display: flex; flex-direction: column; gap: 0.8rem; margin-top: 1.5rem; margin-bottom: 1.5rem; }
+  #categoryFilters { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+  .category-btn {
+    font: inherit;
+    font-size: 0.82rem;
+    font-weight: 600;
+    padding: 0.4rem 0.9rem;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: var(--card);
+    color: var(--text);
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+  }
+  .category-btn:hover { border-color: var(--accent); }
+  .category-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+  #resetFilter {
+    font: inherit;
+    font-size: 0.82rem;
+    font-weight: 600;
+    padding: 0.4rem 0.9rem;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: var(--card);
+    color: var(--muted);
+    cursor: pointer;
+  }
+  #resetFilter:hover { border-color: var(--accent2); color: var(--accent2); }
+
+  #sortOptions { display: flex; align-items: center; gap: 0.6rem; font-size: 0.85rem; color: var(--muted); }
+  #sortOptions select {
+    font: inherit;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text);
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.4rem 0.7rem;
+  }
+
+  #news { display: flex; flex-direction: column; gap: 1rem; }
+  .article {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 1.25rem;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 4px 12px rgba(15, 23, 42, 0.05);
+  }
+  .article h2 { margin: 0 0 0.4rem; font-size: 1.05rem; }
+  .article p { margin: 0.4rem 0; color: var(--muted); font-size: 0.9rem; }
+  .article a { color: var(--accent); font-weight: 600; text-decoration: none; }
+  .article a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+
+<header class="site-header">
+  <img class="site-favicon" src="https://shekarkrishnamoorthy.com/favicon.svg" alt="" width="28" height="28">
+  <div class="site-header-inner">
+    <nav aria-label="Primary">
+      <a href="https://shekarkrishnamoorthy.com/">Home</a>
+      <a href="https://shekarkrishnamoorthy.com/important/projects.html">Projects</a>
+      <a href="https://test.shekarkrishnamoorthy.com/">Music</a>
+      <a href="https://reporting.shekarkrishnamoorthy.com/">Reporting</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <div class="page-intro">
+    <h1>Top Headlines</h1>
+    <p>Live news from NewsAPI, filterable by category and sortable by popularity or date.</p>
+  </div>
+
+  <div id="controls">
+    <div id="categoryFilters">
+      <button class="category-btn active" data-category="">All</button>
+      <button class="category-btn" data-category="business">Business</button>
+      <button class="category-btn" data-category="entertainment">Entertainment</button>
+      <button class="category-btn" data-category="general">General</button>
+      <button class="category-btn" data-category="health">Health</button>
+      <button class="category-btn" data-category="science">Science</button>
+      <button class="category-btn" data-category="sports">Sports</button>
+      <button class="category-btn" data-category="technology">Technology</button>
+      <button id="resetFilter">Reset</button>
+    </div>
+    <div id="sortOptions">
+      <label for="sortSelect">Sort by</label>
+      <select id="sortSelect">
+        <option value="popularity">Popularity (default)</option>
+        <option value="date">Publication Date (Newest)</option>
+      </select>
+    </div>
+  </div>
+
+  <div id="news">Loading news...</div>
+
+  <nav class="page-nav" aria-label="Site tour">
+    <a href="https://shekarkrishnamoorthy.com/important/projects.html" rel="prev">&larr; Projects</a>
+    <a href="https://shekarkrishnamoorthy.com/" rel="next">Home &rarr;</a>
+  </nav>
+</main>
+
+<footer>
+  <p>&copy; 2026 Shekar Krishnamoorthy.</p>
+</footer>
+
+<script>
+  // Same NewsAPI.org top-headlines endpoint used on shekark642.github.io/portfolio/news/,
+  // routed through corsproxy.io since NewsAPI's free tier blocks direct browser requests
+  // from a deployed (non-localhost) origin.
+  const apiKey = '890434a0b66748c9b504cc28df6511ff';
+  let currentCategory = '';
+  let currentSort = 'popularity';
+
+  function loadNews() {
+    let baseUrl = `https://newsapi.org/v2/top-headlines?country=us`;
+    if (currentCategory) baseUrl += `&category=${currentCategory}`;
+    const url = `https://corsproxy.io/?${encodeURIComponent(baseUrl + `&apiKey=${apiKey}`)}`;
+
+    document.getElementById('news').textContent = 'Loading news...';
+    fetch(url)
+      .then(response => response.json())
+      .then(data => {
+        let articles = data.articles || [];
+        if (currentSort === 'date') {
+          articles = articles.filter(a => a.publishedAt)
+            .sort((a, b) => new Date(b.publishedAt) - new Date(a.publishedAt));
+        }
+        displayNews(articles);
+      })
+      .catch(error => {
+        document.getElementById('news').textContent = 'Error fetching news.';
+        console.error('Error fetching news:', error);
+      });
+  }
+
+  function displayNews(articles) {
+    const newsContainer = document.getElementById('news');
+    newsContainer.innerHTML = '';
+
+    if (articles.length === 0) {
+      newsContainer.textContent = 'No news articles found.';
+      return;
+    }
+
+    articles.forEach(article => {
+      const div = document.createElement('div');
+      div.className = 'article';
+
+      const title = document.createElement('h2');
+      title.textContent = article.title;
+      div.appendChild(title);
+
+      if (article.description) {
+        const desc = document.createElement('p');
+        desc.textContent = article.description;
+        div.appendChild(desc);
+      }
+
+      if (article.publishedAt) {
+        const pub = document.createElement('p');
+        pub.textContent = `Published: ${new Date(article.publishedAt).toLocaleString()}`;
+        div.appendChild(pub);
+      }
+
+      const link = document.createElement('a');
+      link.href = article.url;
+      link.target = '_blank';
+      link.textContent = 'Read more →';
+      div.appendChild(link);
+
+      newsContainer.appendChild(div);
+    });
+  }
+
+  document.querySelectorAll('.category-btn').forEach(button => {
+    button.addEventListener('click', () => {
+      document.querySelectorAll('.category-btn').forEach(btn => btn.classList.remove('active'));
+      button.classList.add('active');
+      currentCategory = button.getAttribute('data-category');
+      loadNews();
+    });
+  });
+
+  document.getElementById('resetFilter').addEventListener('click', () => {
+    document.querySelector('.category-btn[data-category=""]').click();
+  });
+
+  document.getElementById('sortSelect').addEventListener('change', (e) => {
+    currentSort = e.target.value;
+    loadNews();
+  });
+
+  loadNews();
+</script>
+
+</body>
+</html>
