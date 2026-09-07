@@ -340,6 +340,8 @@
   updateBudget();
 
   document.getElementById("submitBtn").addEventListener("click", function () {
+    if (window.collector) window.collector.track("submit_click", {});
+
     var ratings = Array.from(document.querySelectorAll(".rating")).map(function (s) {
       return s.dataset.name + ": " + s.value + "/10";
     });

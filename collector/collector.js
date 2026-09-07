@@ -303,4 +303,13 @@
       });
     });
   });
+
+  // --- Public API ---
+  // Everything above is auto-collected; this is the one hook a page can call
+  // itself to record something that only the page knows about (e.g. a
+  // button click), reusing the same session/beacon plumbing as every other
+  // event type here.
+  window.collector = {
+    track: function (type, data) { send(type, data || {}); }
+  };
 })();
