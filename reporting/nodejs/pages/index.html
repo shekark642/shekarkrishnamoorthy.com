@@ -74,6 +74,15 @@
     </table>
   </div>
 
+  <div class="card">
+    <h2>Metric 4: Sessions</h2>
+    <p style="margin:-0.4rem 0 0.9rem;color:#64748b;font-size:0.82rem">Every session's scattered events (enter/load/activity/exit) cross-referenced into one row per visitor.</p>
+    <table>
+      <thead><tr><th>Session</th><th>First Seen</th><th>Last Seen</th><th>Duration</th><th>Pages</th><th>Submitted?</th></tr></thead>
+      <tbody id="sessionRows"></tbody>
+    </table>
+  </div>
+
   <div class="cta-row">
     <a class="btn" href="/performance.html">Generate Detailed Report &rarr;</a>
   </div>
@@ -168,6 +177,23 @@
     document.getElementById("recentRows").innerHTML = rows.map(function (r) {
       return "<tr><td>" + r.type + "</td><td class='mono'>" + (r.session_id || "") + "</td>" +
         "<td class='mono'>" + (r.url || "") + "</td><td class='mono'>" + (r.server_timestamp || "") + "</td></tr>";
+    }).join("");
+  });
+
+  // --- Metric 4: Sessions (cross-referenced - one row per session, not per event) ---
+  function fmtDuration(secs) {
+    if (secs === null || secs === undefined) return "—";
+    if (secs < 60) return secs + "s";
+    return Math.floor(secs / 60) + "m " + (secs % 60) + "s";
+  }
+  fetch("/api/reports/sessions?limit=20").then(function (r) { return r.json(); }).then(function (rows) {
+    document.getElementById("sessionRows").innerHTML = rows.map(function (r) {
+      return "<tr><td class='mono'>" + r.session_id.slice(0, 12) + "</td>" +
+        "<td class='mono'>" + (r.firstSeen || "") + "</td>" +
+        "<td class='mono'>" + (r.lastSeen || "") + "</td>" +
+        "<td>" + fmtDuration(r.durationSecs) + "</td>" +
+        "<td>" + r.pagesVisited + "</td>" +
+        "<td>" + (r.submitted ? "✅" : "—") + "</td></tr>";
     }).join("");
   });
 })();

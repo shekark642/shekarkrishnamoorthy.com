@@ -407,6 +407,51 @@ app.get('/api/reports/summary', async (req, res) => {
   }
 });
 
+// GET /api/reports/sessions - cross-references every session's scattered
+// events (enter/load/activity/exit/submit_click/...) into one row per
+// session, so a session can actually be read as a story instead of raw
+// rows you'd have to reassemble by hand. One GROUP BY does the joining -
+// no per-session round trip, so this scales the same way regardless of
+// how many sessions exist.
+app.get('/api/reports/sessions', async (req, res) => {
+  const where = [];
+  const params = [];
+  if (typeof req.query.urlPrefix === 'string' && req.query.urlPrefix) {
+    where.push('url LIKE ?');
+    params.push(req.query.urlPrefix + '%');
+  }
+  where.push('session_id IS NOT NULL');
+  const whereSql = 'WHERE ' + where.join(' AND ');
+  const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 500);
+
+  try {
+    const [rows] = await dbPool.query(
+      `SELECT
+         session_id,
+         MIN(COALESCE(client_timestamp, server_timestamp)) AS firstSeen,
+         MAX(COALESCE(client_timestamp, server_timestamp)) AS lastSeen,
+         TIMESTAMPDIFF(SECOND,
+           MIN(COALESCE(client_timestamp, server_timestamp)),
+           MAX(COALESCE(client_timestamp, server_timestamp))) AS durationSecs,
+         COUNT(*) AS eventCount,
+         COUNT(DISTINCT url) AS pagesVisited,
+         MAX(url) AS lastUrl,
+         MAX(CASE WHEN type = 'submit_click' THEN 1 ELSE 0 END) = 1 AS submitted,
+         AVG(lcp_value) AS avgLcp
+       FROM events
+       ${whereSql}
+       GROUP BY session_id
+       ORDER BY lastSeen DESC
+       LIMIT ?`,
+      [...params, limit]
+    );
+    res.json(rows);
+  } catch (err) {
+    console.error('[GET /api/reports/sessions] error:', err.message);
+    res.status(500).json({ error: 'database error' });
+  }
+});
+
 // --- User management (HW4 Part 2) ---
 //
 // Full CRUD on the `users` table. requireAuthApi already ran (blanket /api
