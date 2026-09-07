@@ -193,6 +193,44 @@ async function getAllowedPages(session) {
 // Two flavors of each guard: API routes get a JSON 401/403 (so fetch() calls
 // can handle it programmatically), page routes get redirected to the login
 // screen (so a browser navigating there directly lands somewhere sensible).
+
+// Shared styled error page for anything that isn't an API JSON response -
+// 403s, 404s, and uncaught errors all render through this instead of
+// Express's bare default (or a one-line <h1> with no styling at all), so
+// hitting a dead end anywhere on the dashboard still looks like part of
+// the dashboard.
+function errorPageHtml(code, title, message, opts) {
+  opts = opts || {};
+  const linkHref = opts.linkHref || '/';
+  const linkText = opts.linkText || 'Go to Dashboard';
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>${code} - ${title}</title>
+<link rel="icon" type="image/svg+xml" href="https://shekarkrishnamoorthy.com/favicon.svg">
+<style>
+  body { font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif; background: #f8fafc; color: #0f172a; margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 2rem; box-sizing: border-box; }
+  .box { background: #fff; border: 1px solid #dbe3ee; border-radius: 16px; padding: 2.5rem; max-width: 420px; width: 100%; text-align: center; box-shadow: 0 1px 2px rgba(15,23,42,0.04), 0 8px 24px rgba(15,23,42,0.06); box-sizing: border-box; }
+  .code { font-size: 3rem; font-weight: 800; color: #0284c7; margin: 0; line-height: 1; }
+  h1 { font-size: 1.15rem; margin: 0.6rem 0 0.75rem; }
+  p { color: #64748b; font-size: 0.88rem; margin: 0 0 1.5rem; line-height: 1.5; }
+  a.btn { display: inline-block; border: none; border-radius: 8px; padding: 0.6rem 1.2rem; background: #0284c7; color: #fff; font-weight: 600; text-decoration: none; font-size: 0.86rem; }
+  a.btn:hover { background: #0369a1; }
+</style>
+</head>
+<body>
+  <div class="box">
+    <p class="code">${code}</p>
+    <h1>${title}</h1>
+    <p>${message}</p>
+    <a class="btn" href="${linkHref}">${linkText}</a>
+  </div>
+</body>
+</html>`;
+}
+
 function requireAuthApi(req, res, next) {
   if (!req.session) return res.status(401).json({ error: 'not logged in' });
   next();
@@ -226,7 +264,9 @@ function requireAuthPage(req, res, next) {
 function requireRolePage(...roles) {
   return (req, res, next) => {
     if (!req.session) return res.redirect('/login.html');
-    if (!roles.includes(req.session.role)) return res.status(403).type('html').send('<h1>403 Forbidden</h1><p>Your role does not have access to this page.</p>');
+    if (!roles.includes(req.session.role)) {
+      return res.status(403).type('html').send(errorPageHtml(403, 'Access Denied', 'Your role does not have access to this page.'));
+    }
     next();
   };
 }
@@ -234,14 +274,18 @@ function requireRolePage(...roles) {
 function requirePagePage(page) {
   return async (req, res, next) => {
     if (!req.session) return res.redirect('/login.html');
-    if (req.session.role === 'viewer') return res.status(403).type('html').send('<h1>403 Forbidden</h1><p>Your role does not have access to this page.</p>');
+    if (req.session.role === 'viewer') {
+      return res.status(403).type('html').send(errorPageHtml(403, 'Access Denied', 'Your role does not have access to this page.'));
+    }
     try {
       const allowed = await getAllowedPages(req.session);
-      if (!allowed.includes(page)) return res.status(403).type('html').send('<h1>403 Forbidden</h1><p>You do not have access to this page.</p>');
+      if (!allowed.includes(page)) {
+        return res.status(403).type('html').send(errorPageHtml(403, 'Access Denied', 'You do not have access to this page.'));
+      }
       next();
     } catch (err) {
       console.error('[requirePagePage] error:', err.message);
-      res.status(500).send('Server error');
+      res.status(500).type('html').send(errorPageHtml(500, 'Server Error', 'Something went wrong loading this page. Please try again.'));
     }
   };
 }
@@ -1979,6 +2023,33 @@ app.get('/projects.html', requirePagePage('projects'), (req, res) => {
 // "Generate Report" button, not from anything on this page.
 app.get('/reports.html', requireAuthPage, (req, res) => {
   res.sendFile(path.join(PAGES_DIR, 'reports.html'));
+});
+
+// --- Catch-all error handling ---
+//
+// Anything under /api/* that didn't match a specific route gets a JSON 404,
+// consistent with every other API error response; everything else (a typo'd
+// or made-up page URL) gets the same styled page every other error uses,
+// not Express's bare default "Cannot GET /whatever".
+app.use('/api', (req, res) => {
+  res.status(404).json({ error: 'not found' });
+});
+
+app.use((req, res) => {
+  res.status(404).type('html').send(errorPageHtml(404, 'Page Not Found', "The page you're looking for doesn't exist or may have been moved."));
+});
+
+// Final safety net - anything that threw and wasn't caught by its own
+// route's try/catch lands here instead of Express's default stack-trace
+// page. Logged server-side either way; the client only ever sees a generic
+// message, JSON for API calls and the styled page for everything else.
+app.use((err, req, res, next) => {
+  console.error('[unhandled error]', err);
+  if (res.headersSent) return next(err);
+  if (req.path.startsWith('/api/')) {
+    return res.status(500).json({ error: 'server error' });
+  }
+  res.status(500).type('html').send(errorPageHtml(500, 'Server Error', 'Something went wrong. Please try again.'));
 });
 
 const PORT = process.env.PORT || 3011;
