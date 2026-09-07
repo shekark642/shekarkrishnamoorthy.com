@@ -90,6 +90,47 @@ async function getSession(token) {
 async function deleteSession(token) {
   if (!token) return;
   await dbPool.execute('DELETE FROM sessions WHERE token = ?', [token]);
+  sessionResponseCache.delete(token);
+}
+
+// --- Per-login-session response cache ---
+//
+// Keyed by the reporting_session token - NOT the same "session" as a
+// tracked visitor's session_id elsewhere in this file, a completely
+// different concept. The first time a logged-in user hits a given
+// dashboard query, it runs for real; every repeat of that exact request
+// (same path + query string) for the rest of that login just replays the
+// cached result instead of re-querying MySQL. A brand new login always
+// gets a brand new token, so it always starts with an empty cache - there
+// is nothing to explicitly "warm" or invalidate on login. Logging out
+// clears it immediately (see deleteSession above), which is also the
+// easy, already-discoverable way to force a clean reload without adding
+// a second control that does almost the same thing.
+//
+// In-memory, on purpose: this is disposable working cache, not data that
+// needs to survive a restart, and a restart is a perfectly fine moment to
+// lose it. SESSION_MAX_AGE_MS as the per-entry TTL is a defensive backstop
+// against a cache entry outliving its own login session if the hourly
+// expired-session sweep and this cache ever drift out of sync - the token
+// itself already stops being valid (and therefore stops being usable to
+// even reach a cached route) well before that TTL would matter in
+// practice.
+const sessionResponseCache = new Map(); // token -> Map<originalUrl, { data, cachedAt }>
+
+async function withSessionCache(req, compute) {
+  const cookies = parseCookies(req.headers.cookie);
+  const token = cookies[SESSION_COOKIE];
+  if (!token) return compute(); // shouldn't happen behind requireAuthApi, but never let caching be why a request fails
+  let bucket = sessionResponseCache.get(token);
+  if (!bucket) {
+    bucket = new Map();
+    sessionResponseCache.set(token, bucket);
+  }
+  const cached = bucket.get(req.originalUrl);
+  if (cached && Date.now() - cached.cachedAt < SESSION_MAX_AGE_MS) return cached.data;
+  const data = await compute();
+  bucket.set(req.originalUrl, { data, cachedAt: Date.now() });
+  return data;
 }
 
 // Expired rows are already excluded from getSession's WHERE clause, so this
@@ -624,20 +665,27 @@ app.get('/api/performance/summary', requireAuthApi, async (req, res) => {
   const whereSql = 'WHERE ' + where.join(' AND ');
 
   try {
-    const [[totals]] = await dbPool.query(
-      `SELECT
-         COUNT(*) AS totalEvents,
-         COUNT(DISTINCT session_id) AS uniqueSessions,
-         AVG(total_load_time_ms) AS avgLoadTimeMs,
-         AVG(lcp_value) AS avgLcp,
-         AVG(cls_value) AS avgCls,
-         AVG(inp_value) AS avgInp
-       FROM events ${whereSql}`,
-      params
-    );
-
+    // runCustomMetric can reject/flag a bad metricPath by sending its own
+    // response directly - always run it live, never cached, so a
+    // suspicious request is flagged and rejected every time, not silently
+    // served a cached success from earlier in the session.
     const metricResult = await runCustomMetric(whereSql, params, req, res);
     if (metricResult.handled) return;
+
+    const totals = await withSessionCache(req, async () => {
+      const [[row]] = await dbPool.query(
+        `SELECT
+           COUNT(*) AS totalEvents,
+           COUNT(DISTINCT session_id) AS uniqueSessions,
+           AVG(total_load_time_ms) AS avgLoadTimeMs,
+           AVG(lcp_value) AS avgLcp,
+           AVG(cls_value) AS avgCls,
+           AVG(inp_value) AS avgInp
+         FROM events ${whereSql}`,
+        params
+      );
+      return row;
+    });
 
     res.json({ totals, customMetric: metricResult.customMetric });
   } catch (err) {
@@ -662,10 +710,13 @@ app.get('/api/performance/events', requireAuthApi, async (req, res) => {
     'total_load_time_ms, lcp_value, cls_value, inp_value' + (includePayload ? ', payload' : '');
 
   try {
-    const [rows] = await dbPool.query(
-      `SELECT ${columns} FROM events ${whereSql} ORDER BY id DESC LIMIT ? OFFSET ?`,
-      [...params, limit, offset]
-    );
+    const rows = await withSessionCache(req, async () => {
+      const [r] = await dbPool.query(
+        `SELECT ${columns} FROM events ${whereSql} ORDER BY id DESC LIMIT ? OFFSET ?`,
+        [...params, limit, offset]
+      );
+      return r;
+    });
     res.json(rows);
   } catch (err) {
     console.error('[GET /api/performance/events] error:', err.message);
@@ -704,50 +755,52 @@ const SITE_COMPARISON_PER_RESOURCE_MS = 40;
 // real tracked pages.
 app.get('/api/performance/page-comparison', requireAuthApi, async (req, res) => {
   try {
-    const [rows] = await dbPool.query(`
-      SELECT
-        url,
-        COUNT(*) AS sampleSize,
-        AVG(total_load_time_ms) AS avgLoadTimeMs,
-        AVG(JSON_EXTRACT(payload, '$.performanceData.resourceCount')) AS avgResourceCount,
-        COUNT(JSON_EXTRACT(payload, '$.performanceData.resourceCount')) AS resourceSamples
-      FROM events
-      WHERE type = 'load' AND url IS NOT NULL
-        AND url NOT LIKE 'https://reporting.shekarkrishnamoorthy.com/%'
-      GROUP BY url
-    `);
+    const result = await withSessionCache(req, async () => {
+      const [rows] = await dbPool.query(`
+        SELECT
+          url,
+          COUNT(*) AS sampleSize,
+          AVG(total_load_time_ms) AS avgLoadTimeMs,
+          AVG(JSON_EXTRACT(payload, '$.performanceData.resourceCount')) AS avgResourceCount,
+          COUNT(JSON_EXTRACT(payload, '$.performanceData.resourceCount')) AS resourceSamples
+        FROM events
+        WHERE type = 'load' AND url IS NOT NULL
+          AND url NOT LIKE 'https://reporting.shekarkrishnamoorthy.com/%'
+        GROUP BY url
+      `);
 
-    // Root ("/") and the explicit "/index.html" are the same page under two
-    // different URL strings (see normalizePageUrl) - merged here with a
-    // sample-size-weighted average rather than a plain average of the two
-    // rows' averages, so a page with 2 samples doesn't count as heavily as
-    // one with 200.
-    const byPage = {};
-    rows.forEach((r) => {
-      const page = normalizePageUrl(r.url);
-      const entry = byPage[page] || { page, sampleSize: 0, loadTimeSum: 0, resourceCountSum: 0, resourceSamples: 0 };
-      entry.sampleSize += r.sampleSize;
-      entry.loadTimeSum += r.avgLoadTimeMs * r.sampleSize;
-      if (r.avgResourceCount !== null) {
-        entry.resourceCountSum += r.avgResourceCount * r.resourceSamples;
-        entry.resourceSamples += r.resourceSamples;
-      }
-      byPage[page] = entry;
+      // Root ("/") and the explicit "/index.html" are the same page under
+      // two different URL strings (see normalizePageUrl) - merged here
+      // with a sample-size-weighted average rather than a plain average
+      // of the two rows' averages, so a page with 2 samples doesn't count
+      // as heavily as one with 200.
+      const byPage = {};
+      rows.forEach((r) => {
+        const page = normalizePageUrl(r.url);
+        const entry = byPage[page] || { page, sampleSize: 0, loadTimeSum: 0, resourceCountSum: 0, resourceSamples: 0 };
+        entry.sampleSize += r.sampleSize;
+        entry.loadTimeSum += r.avgLoadTimeMs * r.sampleSize;
+        if (r.avgResourceCount !== null) {
+          entry.resourceCountSum += r.avgResourceCount * r.resourceSamples;
+          entry.resourceSamples += r.resourceSamples;
+        }
+        byPage[page] = entry;
+      });
+
+      return Object.values(byPage).map((e) => {
+        const avgLoadTimeMs = e.loadTimeSum / e.sampleSize;
+        const avgResourceCount = e.resourceSamples ? e.resourceCountSum / e.resourceSamples : null;
+        return {
+          page: e.page,
+          sampleSize: e.sampleSize,
+          avgLoadTimeMs,
+          avgResourceCount,
+          expectedLoadTimeMs: avgResourceCount === null
+            ? null
+            : SITE_COMPARISON_FIXED_OVERHEAD_MS + avgResourceCount * SITE_COMPARISON_PER_RESOURCE_MS
+        };
+      }).sort((a, b) => b.avgLoadTimeMs - a.avgLoadTimeMs);
     });
-
-    const result = Object.values(byPage).map((e) => {
-      const avgLoadTimeMs = e.loadTimeSum / e.sampleSize;
-      const avgResourceCount = e.resourceSamples ? e.resourceCountSum / e.resourceSamples : null;
-      return {
-        page: e.page,
-        sampleSize: e.sampleSize,
-        avgLoadTimeMs,
-        avgResourceCount,
-        expectedLoadTimeMs: avgResourceCount === null
-          ? null
-          : SITE_COMPARISON_FIXED_OVERHEAD_MS + avgResourceCount * SITE_COMPARISON_PER_RESOURCE_MS
-      };
-    }).sort((a, b) => b.avgLoadTimeMs - a.avgLoadTimeMs);
 
     res.json(result);
   } catch (err) {
@@ -765,29 +818,32 @@ app.get('/api/performance/page-comparison', requireAuthApi, async (req, res) => 
 // historical events predate it and have nothing to plot.
 app.get('/api/performance/hardware-scatter', requireAuthApi, async (req, res) => {
   try {
-    const [rows] = await dbPool.query(`
-      SELECT
-        ip,
-        AVG(JSON_EXTRACT(payload, '$.staticData.hardwareConcurrency')) AS hardwareConcurrency,
-        AVG(JSON_EXTRACT(payload, '$.staticData.deviceMemory')) AS deviceMemory,
-        AVG(total_load_time_ms) AS avgLoadTimeMs,
-        COUNT(*) AS sampleSize,
-        SUBSTRING_INDEX(GROUP_CONCAT(JSON_UNQUOTE(JSON_EXTRACT(payload, '$.staticData.userAgent')) ORDER BY id DESC SEPARATOR '||'), '||', 1) AS userAgent
-      FROM events
-      WHERE type = 'load' AND ip IS NOT NULL
-        AND JSON_EXTRACT(payload, '$.staticData.hardwareConcurrency') IS NOT NULL
-        AND url NOT LIKE 'https://reporting.shekarkrishnamoorthy.com/%'
-      GROUP BY ip
-    `);
-    const userNumberByIp = await lookupUserNumbers(rows.map((r) => r.ip));
-    res.json(rows.map((r) => ({
-      userNumber: userNumberByIp[r.ip] ?? null,
-      hardwareConcurrency: r.hardwareConcurrency,
-      deviceMemory: r.deviceMemory,
-      avgLoadTimeMs: r.avgLoadTimeMs,
-      sampleSize: r.sampleSize,
-      userAgent: r.userAgent
-    })));
+    const result = await withSessionCache(req, async () => {
+      const [rows] = await dbPool.query(`
+        SELECT
+          ip,
+          AVG(JSON_EXTRACT(payload, '$.staticData.hardwareConcurrency')) AS hardwareConcurrency,
+          AVG(JSON_EXTRACT(payload, '$.staticData.deviceMemory')) AS deviceMemory,
+          AVG(total_load_time_ms) AS avgLoadTimeMs,
+          COUNT(*) AS sampleSize,
+          SUBSTRING_INDEX(GROUP_CONCAT(JSON_UNQUOTE(JSON_EXTRACT(payload, '$.staticData.userAgent')) ORDER BY id DESC SEPARATOR '||'), '||', 1) AS userAgent
+        FROM events
+        WHERE type = 'load' AND ip IS NOT NULL
+          AND JSON_EXTRACT(payload, '$.staticData.hardwareConcurrency') IS NOT NULL
+          AND url NOT LIKE 'https://reporting.shekarkrishnamoorthy.com/%'
+        GROUP BY ip
+      `);
+      const userNumberByIp = await lookupUserNumbers(rows.map((r) => r.ip));
+      return rows.map((r) => ({
+        userNumber: userNumberByIp[r.ip] ?? null,
+        hardwareConcurrency: r.hardwareConcurrency,
+        deviceMemory: r.deviceMemory,
+        avgLoadTimeMs: r.avgLoadTimeMs,
+        sampleSize: r.sampleSize,
+        userAgent: r.userAgent
+      }));
+    });
+    res.json(result);
   } catch (err) {
     console.error('[GET /api/performance/hardware-scatter] error:', err.message);
     res.status(500).json({ error: 'database error' });
@@ -806,19 +862,24 @@ app.get('/api/behavioral/summary', requireAuthApi, async (req, res) => {
   const groupBy = ALLOWED_GROUP_BY.includes(req.query.groupBy) ? req.query.groupBy : 'type';
 
   try {
-    const [[totals]] = await dbPool.query(
-      `SELECT COUNT(*) AS totalEvents, COUNT(DISTINCT session_id) AS uniqueSessions FROM events ${whereSql}`,
-      params
-    );
-
-    const [byGroup] = await dbPool.query(
-      `SELECT ${groupBy} AS \`key\`, COUNT(*) AS count FROM events ${whereSql}
-       GROUP BY ${groupBy} ORDER BY count DESC LIMIT 50`,
-      params
-    );
-
+    // Same reasoning as /api/performance/summary: runCustomMetric can
+    // reject/flag a bad request directly, so it always runs live, never
+    // through the cache.
     const metricResult = await runCustomMetric(whereSql, params, req, res);
     if (metricResult.handled) return;
+
+    const { totals, byGroup } = await withSessionCache(req, async () => {
+      const [[t]] = await dbPool.query(
+        `SELECT COUNT(*) AS totalEvents, COUNT(DISTINCT session_id) AS uniqueSessions FROM events ${whereSql}`,
+        params
+      );
+      const [g] = await dbPool.query(
+        `SELECT ${groupBy} AS \`key\`, COUNT(*) AS count FROM events ${whereSql}
+         GROUP BY ${groupBy} ORDER BY count DESC LIMIT 50`,
+        params
+      );
+      return { totals: t, byGroup: g };
+    });
 
     res.json({ totals, groupBy, byGroup, customMetric: metricResult.customMetric });
   } catch (err) {
@@ -847,10 +908,13 @@ app.get('/api/behavioral/events', requireAuthApi, async (req, res) => {
   const columns = 'id, session_id, type, url, ip, client_timestamp, server_timestamp' + (includePayload ? ', payload' : '');
 
   try {
-    const [rows] = await dbPool.query(
-      `SELECT ${columns} FROM events ${whereSql} ORDER BY id DESC LIMIT ? OFFSET ?`,
-      [...params, limit, offset]
-    );
+    const rows = await withSessionCache(req, async () => {
+      const [r] = await dbPool.query(
+        `SELECT ${columns} FROM events ${whereSql} ORDER BY id DESC LIMIT ? OFFSET ?`,
+        [...params, limit, offset]
+      );
+      return r;
+    });
     res.json(rows);
   } catch (err) {
     console.error('[GET /api/behavioral/events] error:', err.message);
@@ -875,44 +939,47 @@ app.get('/api/behavioral/distinct-users', requireAuthApi, async (req, res) => {
     // ip's sessions - a second level of aggregation the old single-pass
     // query over raw events couldn't express, since "session duration"
     // isn't a column, it's already an aggregate over that session's rows.
-    const [rows] = await dbPool.query(
-      `SELECT
-         d.ip,
-         v.user_number AS userNumber,
-         d.sessionCount,
-         d.firstSeen,
-         d.lastSeen,
-         d.longestSessionSecs,
-         d.avgSessionSecs
-       FROM (
-         SELECT
-           ip,
-           COUNT(*) AS sessionCount,
-           MIN(firstSeen) AS firstSeen,
-           MAX(lastSeen) AS lastSeen,
-           MAX(durationSecs) AS longestSessionSecs,
-           AVG(durationSecs) AS avgSessionSecs
+    const rows = await withSessionCache(req, async () => {
+      const [r] = await dbPool.query(
+        `SELECT
+           d.ip,
+           v.user_number AS userNumber,
+           d.sessionCount,
+           d.firstSeen,
+           d.lastSeen,
+           d.longestSessionSecs,
+           d.avgSessionSecs
          FROM (
            SELECT
-             session_id,
-             SUBSTRING_INDEX(GROUP_CONCAT(ip ORDER BY id DESC SEPARATOR '||'), '||', 1) AS ip,
-             MIN(COALESCE(client_timestamp, server_timestamp)) AS firstSeen,
-             MAX(COALESCE(client_timestamp, server_timestamp)) AS lastSeen,
-             TIMESTAMPDIFF(SECOND,
-               MIN(COALESCE(client_timestamp, server_timestamp)),
-               MAX(COALESCE(client_timestamp, server_timestamp))) AS durationSecs
-           FROM events
-           WHERE session_id IS NOT NULL
-           GROUP BY session_id
-         ) sessions
-         WHERE ip IS NOT NULL
-         GROUP BY ip
-       ) d
-       LEFT JOIN visitors v ON v.ip = d.ip
-       ORDER BY d.sessionCount DESC, d.lastSeen DESC
-       LIMIT ?`,
-      [limit]
-    );
+             ip,
+             COUNT(*) AS sessionCount,
+             MIN(firstSeen) AS firstSeen,
+             MAX(lastSeen) AS lastSeen,
+             MAX(durationSecs) AS longestSessionSecs,
+             AVG(durationSecs) AS avgSessionSecs
+           FROM (
+             SELECT
+               session_id,
+               SUBSTRING_INDEX(GROUP_CONCAT(ip ORDER BY id DESC SEPARATOR '||'), '||', 1) AS ip,
+               MIN(COALESCE(client_timestamp, server_timestamp)) AS firstSeen,
+               MAX(COALESCE(client_timestamp, server_timestamp)) AS lastSeen,
+               TIMESTAMPDIFF(SECOND,
+                 MIN(COALESCE(client_timestamp, server_timestamp)),
+                 MAX(COALESCE(client_timestamp, server_timestamp))) AS durationSecs
+             FROM events
+             WHERE session_id IS NOT NULL
+             GROUP BY session_id
+           ) sessions
+           WHERE ip IS NOT NULL
+           GROUP BY ip
+         ) d
+         LEFT JOIN visitors v ON v.ip = d.ip
+         ORDER BY d.sessionCount DESC, d.lastSeen DESC
+         LIMIT ?`,
+        [limit]
+      );
+      return r;
+    });
     // Raw IPs on this table are super_admin only - masked (not omitted, so
     // the column still lines up and User N/session counts stay visible) for
     // everyone else. Done here, not left to the frontend to hide, since a
@@ -954,23 +1021,26 @@ app.get('/api/behavioral/distinct-users', requireAuthApi, async (req, res) => {
 // that fast - a real, observed gap, not a rounding artifact.
 app.get('/api/behavioral/visitor-types', requireAuthApi, async (req, res) => {
   try {
-    const [[row]] = await dbPool.query(`
-      SELECT
-        SUM(sessionIsBot = 1) AS botSessions,
-        SUM(sessionIsBot = 0) AS humanSessions,
-        SUM(sessionIsBot IS NULL) AS unclassifiedSessions
-      FROM (
-        SELECT session_id, MAX(is_bot) AS sessionIsBot
-        FROM events
-        WHERE session_id IS NOT NULL
-        GROUP BY session_id
-      ) t
-    `);
-    res.json({
-      bot: Number(row.botSessions) || 0,
-      human: Number(row.humanSessions) || 0,
-      unclassified: Number(row.unclassifiedSessions) || 0
+    const result = await withSessionCache(req, async () => {
+      const [[row]] = await dbPool.query(`
+        SELECT
+          SUM(sessionIsBot = 1) AS botSessions,
+          SUM(sessionIsBot = 0) AS humanSessions,
+          SUM(sessionIsBot IS NULL) AS unclassifiedSessions
+        FROM (
+          SELECT session_id, MAX(is_bot) AS sessionIsBot
+          FROM events
+          WHERE session_id IS NOT NULL
+          GROUP BY session_id
+        ) t
+      `);
+      return {
+        bot: Number(row.botSessions) || 0,
+        human: Number(row.humanSessions) || 0,
+        unclassified: Number(row.unclassifiedSessions) || 0
+      };
     });
+    res.json(result);
   } catch (err) {
     console.error('[GET /api/behavioral/visitor-types] error:', err.message);
     res.status(500).json({ error: 'database error' });
@@ -996,87 +1066,92 @@ app.get('/api/behavioral/top-sessions', requireAuthApi, async (req, res) => {
   const minSeconds = Math.max(parseInt(req.query.minSeconds, 10) || 0, 0);
 
   try {
-    const [base] = await dbPool.query(
-      `SELECT
-         session_id,
-         MIN(COALESCE(client_timestamp, server_timestamp)) AS firstSeen,
-         MAX(COALESCE(client_timestamp, server_timestamp)) AS lastSeen,
-         TIMESTAMPDIFF(SECOND,
-           MIN(COALESCE(client_timestamp, server_timestamp)),
-           MAX(COALESCE(client_timestamp, server_timestamp))) AS durationSecs,
-         COUNT(*) AS eventCount,
-         COUNT(DISTINCT url) AS pagesVisited,
-         SUBSTRING_INDEX(GROUP_CONCAT(url ORDER BY id DESC SEPARATOR '||'), '||', 1) AS exitUrl,
-         SUBSTRING_INDEX(GROUP_CONCAT(ip ORDER BY id DESC SEPARATOR '||'), '||', 1) AS ip,
-         MAX(CASE WHEN type = 'submit_click' THEN 1 ELSE 0 END) = 1 AS submitted
-       FROM events
-       WHERE type != 'load' AND session_id IS NOT NULL
-       GROUP BY session_id
-       HAVING durationSecs >= ?
-       ORDER BY ${orderCol} DESC
-       LIMIT ?`,
-      [minSeconds, limit]
-    );
-    if (!base.length) return res.json([]);
+    const result = await withSessionCache(req, async () => {
+      const [base] = await dbPool.query(
+        `SELECT
+           session_id,
+           MIN(COALESCE(client_timestamp, server_timestamp)) AS firstSeen,
+           MAX(COALESCE(client_timestamp, server_timestamp)) AS lastSeen,
+           TIMESTAMPDIFF(SECOND,
+             MIN(COALESCE(client_timestamp, server_timestamp)),
+             MAX(COALESCE(client_timestamp, server_timestamp))) AS durationSecs,
+           COUNT(*) AS eventCount,
+           COUNT(DISTINCT url) AS pagesVisited,
+           SUBSTRING_INDEX(GROUP_CONCAT(url ORDER BY id DESC SEPARATOR '||'), '||', 1) AS exitUrl,
+           SUBSTRING_INDEX(GROUP_CONCAT(ip ORDER BY id DESC SEPARATOR '||'), '||', 1) AS ip,
+           MAX(CASE WHEN type = 'submit_click' THEN 1 ELSE 0 END) = 1 AS submitted
+         FROM events
+         WHERE type != 'load' AND session_id IS NOT NULL
+         GROUP BY session_id
+         HAVING durationSecs >= ?
+         ORDER BY ${orderCol} DESC
+         LIMIT ?`,
+        [minSeconds, limit]
+      );
+      if (!base.length) return [];
 
-    const ids = base.map((r) => r.session_id);
-    const placeholders = ids.map(() => '?').join(',');
+      const ids = base.map((r) => r.session_id);
+      const placeholders = ids.map(() => '?').join(',');
 
-    const [deviceRows] = await dbPool.query(
-      `SELECT session_id,
-              MAX(JSON_UNQUOTE(JSON_EXTRACT(payload, '$.staticData.userAgent'))) AS userAgent,
-              MAX(JSON_UNQUOTE(JSON_EXTRACT(payload, '$.staticData.language'))) AS language,
-              MAX(JSON_EXTRACT(payload, '$.staticData.screenWidth')) AS screenWidth,
-              MAX(JSON_EXTRACT(payload, '$.staticData.screenHeight')) AS screenHeight,
-              MAX(JSON_EXTRACT(payload, '$.staticData.windowWidth')) AS windowWidth,
-              MAX(JSON_EXTRACT(payload, '$.staticData.windowHeight')) AS windowHeight,
-              MAX(JSON_UNQUOTE(JSON_EXTRACT(payload, '$.staticData.connectionType'))) AS connectionType,
-              MAX(is_bot) AS isBot
-       FROM events
-       WHERE type = 'load' AND session_id IN (${placeholders})
-       GROUP BY session_id`,
-      ids
-    );
-    const deviceBySession = {};
-    deviceRows.forEach((r) => { deviceBySession[r.session_id] = r; });
+      const [deviceRows] = await dbPool.query(
+        `SELECT session_id,
+                MAX(JSON_UNQUOTE(JSON_EXTRACT(payload, '$.staticData.userAgent'))) AS userAgent,
+                MAX(JSON_UNQUOTE(JSON_EXTRACT(payload, '$.staticData.language'))) AS language,
+                MAX(JSON_EXTRACT(payload, '$.staticData.screenWidth')) AS screenWidth,
+                MAX(JSON_EXTRACT(payload, '$.staticData.screenHeight')) AS screenHeight,
+                MAX(JSON_EXTRACT(payload, '$.staticData.windowWidth')) AS windowWidth,
+                MAX(JSON_EXTRACT(payload, '$.staticData.windowHeight')) AS windowHeight,
+                MAX(JSON_UNQUOTE(JSON_EXTRACT(payload, '$.staticData.connectionType'))) AS connectionType,
+                MAX(is_bot) AS isBot
+         FROM events
+         WHERE type = 'load' AND session_id IN (${placeholders})
+         GROUP BY session_id`,
+        ids
+      );
+      const deviceBySession = {};
+      deviceRows.forEach((r) => { deviceBySession[r.session_id] = r; });
 
-    const [activityRows] = await dbPool.query(
-      `SELECT session_id,
-              SUM(JSON_LENGTH(payload, '$.mouseMoves')) AS totalMouseMoves,
-              SUM(JSON_LENGTH(payload, '$.mouseClicks')) AS totalClicks,
-              SUM(JSON_LENGTH(payload, '$.scrollEvents')) AS totalScrolls,
-              SUM(JSON_LENGTH(payload, '$.idlePeriods')) AS totalIdlePeriods,
-              SUM(JSON_LENGTH(payload, '$.errors')) AS totalErrors
-       FROM events
-       WHERE type = 'activity' AND session_id IN (${placeholders})
-       GROUP BY session_id`,
-      ids
-    );
-    const activityBySession = {};
-    activityRows.forEach((r) => { activityBySession[r.session_id] = r; });
+      const [activityRows] = await dbPool.query(
+        `SELECT session_id,
+                SUM(JSON_LENGTH(payload, '$.mouseMoves')) AS totalMouseMoves,
+                SUM(JSON_LENGTH(payload, '$.mouseClicks')) AS totalClicks,
+                SUM(JSON_LENGTH(payload, '$.scrollEvents')) AS totalScrolls,
+                SUM(JSON_LENGTH(payload, '$.idlePeriods')) AS totalIdlePeriods,
+                SUM(JSON_LENGTH(payload, '$.errors')) AS totalErrors
+         FROM events
+         WHERE type = 'activity' AND session_id IN (${placeholders})
+         GROUP BY session_id`,
+        ids
+      );
+      const activityBySession = {};
+      activityRows.forEach((r) => { activityBySession[r.session_id] = r; });
 
-    // LogRocket's own product does full pixel-perfect session replay (DOM,
-    // network, console), far richer than the coordinate-path replay above -
-    // analytics.js sends its session URL through collector.track() as a
-    // logrocket_session event, so it just needs surfacing here.
-    const [logrocketRows] = await dbPool.query(
-      `SELECT session_id, JSON_UNQUOTE(JSON_EXTRACT(payload, '$.logrocketUrl')) AS url
-       FROM events
-       WHERE type = 'logrocket_session' AND session_id IN (${placeholders})`,
-      ids
-    );
-    const logrocketBySession = {};
-    logrocketRows.forEach((r) => { logrocketBySession[r.session_id] = r.url; });
+      // LogRocket's own product does full pixel-perfect session replay
+      // (DOM, network, console), far richer than the coordinate-path
+      // replay above - analytics.js sends its session URL through
+      // collector.track() as a logrocket_session event, so it just needs
+      // surfacing here.
+      const [logrocketRows] = await dbPool.query(
+        `SELECT session_id, JSON_UNQUOTE(JSON_EXTRACT(payload, '$.logrocketUrl')) AS url
+         FROM events
+         WHERE type = 'logrocket_session' AND session_id IN (${placeholders})`,
+        ids
+      );
+      const logrocketBySession = {};
+      logrocketRows.forEach((r) => { logrocketBySession[r.session_id] = r.url; });
 
-    const userNumberByIp = await lookupUserNumbers(base.map((r) => r.ip));
+      const userNumberByIp = await lookupUserNumbers(base.map((r) => r.ip));
 
-    res.json(base.map((r) => ({
-      ...r,
-      userNumber: r.ip ? (userNumberByIp[r.ip] ?? null) : null,
-      device: deviceBySession[r.session_id] || null,
-      activity: activityBySession[r.session_id] || null,
-      logrocketUrl: logrocketBySession[r.session_id] || null
-    })));
+      return base.map((r) => ({
+        ...r,
+        userNumber: r.ip ? (userNumberByIp[r.ip] ?? null) : null,
+        device: deviceBySession[r.session_id] || null,
+        activity: activityBySession[r.session_id] || null,
+        logrocketUrl: logrocketBySession[r.session_id] || null
+      }));
+    });
+
+    res.json(result);
   } catch (err) {
     console.error('[GET /api/behavioral/top-sessions] error:', err.message);
     res.status(500).json({ error: 'database error' });
@@ -1100,22 +1175,25 @@ app.get('/api/behavioral/session-mouse/:sessionId', requireAuthApi, async (req, 
   // portion spent on one specific page instead of the whole session.
   const pageUrl = typeof req.query.url === 'string' ? req.query.url : null;
   try {
-    const [rows] = await dbPool.query(
-      pageUrl
-        ? "SELECT payload FROM events WHERE type = 'activity' AND session_id = ? AND url = ? ORDER BY id ASC"
-        : "SELECT payload FROM events WHERE type = 'activity' AND session_id = ? ORDER BY id ASC",
-      pageUrl ? [sessionId, pageUrl] : [sessionId]
-    );
-    let moves = [];
-    let clicks = [];
-    rows.forEach((r) => {
-      const p = r.payload || {};
-      if (Array.isArray(p.mouseMoves)) moves = moves.concat(p.mouseMoves);
-      if (Array.isArray(p.mouseClicks)) clicks = clicks.concat(p.mouseClicks);
+    const result = await withSessionCache(req, async () => {
+      const [rows] = await dbPool.query(
+        pageUrl
+          ? "SELECT payload FROM events WHERE type = 'activity' AND session_id = ? AND url = ? ORDER BY id ASC"
+          : "SELECT payload FROM events WHERE type = 'activity' AND session_id = ? ORDER BY id ASC",
+        pageUrl ? [sessionId, pageUrl] : [sessionId]
+      );
+      let moves = [];
+      let clicks = [];
+      rows.forEach((r) => {
+        const p = r.payload || {};
+        if (Array.isArray(p.mouseMoves)) moves = moves.concat(p.mouseMoves);
+        if (Array.isArray(p.mouseClicks)) clicks = clicks.concat(p.mouseClicks);
+      });
+      moves.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+      clicks.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+      return { moves, clicks };
     });
-    moves.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
-    clicks.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
-    res.json({ moves, clicks });
+    res.json(result);
   } catch (err) {
     console.error('[GET /api/behavioral/session-mouse/:sessionId] error:', err.message);
     res.status(500).json({ error: 'database error' });
@@ -1190,52 +1268,62 @@ const BOT_UA_RE = /bot|crawl|spider|slurp|headless|phantom|selenium|puppeteer|pl
 app.get('/api/behavioral/bot-score/:sessionId', requireAuthApi, async (req, res) => {
   const sessionId = String(req.params.sessionId).slice(0, 64);
   try {
-    const [loadRows] = await dbPool.query(
-      "SELECT payload FROM events WHERE type = 'load' AND session_id = ? ORDER BY id ASC LIMIT 1",
-      [sessionId]
-    );
-    const [activityRows] = await dbPool.query(
-      "SELECT payload FROM events WHERE type = 'activity' AND session_id = ? ORDER BY id ASC",
-      [sessionId]
-    );
-    if (!loadRows.length) return res.status(404).json({ error: 'no load event for this session yet' });
+    // Historical events never change, so a session's bot-score signals
+    // (collinearFraction/timingCoefficientOfVariation are real per-request
+    // CPU work, not just a query) are an easy cache win - once computed
+    // for this login session, re-opening the same session's "(details)"
+    // link just replays it.
+    const result = await withSessionCache(req, async () => {
+      const [loadRows] = await dbPool.query(
+        "SELECT payload FROM events WHERE type = 'load' AND session_id = ? ORDER BY id ASC LIMIT 1",
+        [sessionId]
+      );
+      const [activityRows] = await dbPool.query(
+        "SELECT payload FROM events WHERE type = 'activity' AND session_id = ? ORDER BY id ASC",
+        [sessionId]
+      );
+      if (!loadRows.length) return { notFound: true };
 
-    const staticData = (loadRows[0].payload || {}).staticData || {};
-    let moves = [];
-    let clicks = [];
-    activityRows.forEach((r) => {
-      const p = r.payload || {};
-      if (Array.isArray(p.mouseMoves)) moves = moves.concat(p.mouseMoves);
-      if (Array.isArray(p.mouseClicks)) clicks = clicks.concat(p.mouseClicks);
+      const staticData = (loadRows[0].payload || {}).staticData || {};
+      let moves = [];
+      let clicks = [];
+      activityRows.forEach((r) => {
+        const p = r.payload || {};
+        if (Array.isArray(p.mouseMoves)) moves = moves.concat(p.mouseMoves);
+        if (Array.isArray(p.mouseClicks)) clicks = clicks.concat(p.mouseClicks);
+      });
+      moves.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+
+      const signals = [];
+      let score = 0;
+
+      function addSignal(name, weight, triggered, note) {
+        if (triggered) score += weight;
+        signals.push({ signal: name, weight: weight, triggered: !!triggered, note: note });
+      }
+
+      addSignal('navigator.webdriver', 35, staticData.webdriver === true, 'Set by default under Selenium/Puppeteer/Playwright.');
+      addSignal('user_agent_pattern', 25, BOT_UA_RE.test(staticData.userAgent || ''), 'Matches a known bot/crawler/tool substring.');
+      addSignal('zero_plugins', 8, staticData.pluginsCount === 0, 'navigator.plugins.length === 0 - common in default headless configs.');
+      addSignal('minimal_languages', 7, typeof staticData.languagesCount === 'number' && staticData.languagesCount <= 1, 'navigator.languages has 0-1 entries.');
+
+      const clicksWithNoMovement = clicks.length > 0 && moves.length === 0;
+      addSignal('clicks_without_movement', 15, clicksWithNoMovement, 'Clicks recorded but zero mouse movement ever - a human has to move the cursor there first.');
+
+      const straightness = collinearFraction(moves);
+      addSignal('linear_movement', 7, straightness !== null && straightness > 0.6,
+        straightness !== null ? 'Fraction of near-perfectly-straight movement segments: ' + (straightness * 100).toFixed(1) + '%.' : 'Not enough movement data to judge.');
+
+      const timingCV = timingCoefficientOfVariation(moves);
+      addSignal('regular_timing', 3, timingCV !== null && timingCV < 0.15,
+        timingCV !== null ? 'Coefficient of variation of move timing: ' + timingCV.toFixed(3) + ' (human timing is typically well above 0.3).' : 'Not enough movement data to judge.');
+
+      const verdict = score >= 60 ? 'likely_bot' : score >= 30 ? 'uncertain' : 'likely_human';
+      return { sessionId: sessionId, score: score, verdict: verdict, signals: signals };
     });
-    moves.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
 
-    const signals = [];
-    var score = 0;
-
-    function addSignal(name, weight, triggered, note) {
-      if (triggered) score += weight;
-      signals.push({ signal: name, weight: weight, triggered: !!triggered, note: note });
-    }
-
-    addSignal('navigator.webdriver', 35, staticData.webdriver === true, 'Set by default under Selenium/Puppeteer/Playwright.');
-    addSignal('user_agent_pattern', 25, BOT_UA_RE.test(staticData.userAgent || ''), 'Matches a known bot/crawler/tool substring.');
-    addSignal('zero_plugins', 8, staticData.pluginsCount === 0, 'navigator.plugins.length === 0 - common in default headless configs.');
-    addSignal('minimal_languages', 7, typeof staticData.languagesCount === 'number' && staticData.languagesCount <= 1, 'navigator.languages has 0-1 entries.');
-
-    const clicksWithNoMovement = clicks.length > 0 && moves.length === 0;
-    addSignal('clicks_without_movement', 15, clicksWithNoMovement, 'Clicks recorded but zero mouse movement ever - a human has to move the cursor there first.');
-
-    const straightness = collinearFraction(moves);
-    addSignal('linear_movement', 7, straightness !== null && straightness > 0.6,
-      straightness !== null ? 'Fraction of near-perfectly-straight movement segments: ' + (straightness * 100).toFixed(1) + '%.' : 'Not enough movement data to judge.');
-
-    const timingCV = timingCoefficientOfVariation(moves);
-    addSignal('regular_timing', 3, timingCV !== null && timingCV < 0.15,
-      timingCV !== null ? 'Coefficient of variation of move timing: ' + timingCV.toFixed(3) + ' (human timing is typically well above 0.3).' : 'Not enough movement data to judge.');
-
-    const verdict = score >= 60 ? 'likely_bot' : score >= 30 ? 'uncertain' : 'likely_human';
-    res.json({ sessionId: sessionId, score: score, verdict: verdict, signals: signals });
+    if (result.notFound) return res.status(404).json({ error: 'no load event for this session yet' });
+    res.json(result);
   } catch (err) {
     console.error('[GET /api/behavioral/bot-score/:sessionId] error:', err.message);
     res.status(500).json({ error: 'database error' });
@@ -1319,95 +1407,100 @@ app.get('/api/behavioral/site-sessions', requirePageApi('music'), async (req, re
   const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 500);
 
   try {
-    const [base] = await dbPool.query(
-      `SELECT
-         session_id,
-         MIN(COALESCE(client_timestamp, server_timestamp)) AS firstSeen,
-         MAX(COALESCE(client_timestamp, server_timestamp)) AS lastSeen,
-         TIMESTAMPDIFF(SECOND,
-           MIN(COALESCE(client_timestamp, server_timestamp)),
-           MAX(COALESCE(client_timestamp, server_timestamp))) AS durationSecs,
-         SUBSTRING_INDEX(GROUP_CONCAT(ip ORDER BY id DESC SEPARATOR '||'), '||', 1) AS ip,
-         MAX(CASE WHEN type = 'submit_click' THEN 1 ELSE 0 END) = 1 AS submitted
-       FROM events
-       WHERE type != 'load' AND session_id IN (
-         SELECT DISTINCT session_id FROM events WHERE url LIKE ? AND session_id IS NOT NULL
-       )
-       GROUP BY session_id
-       HAVING durationSecs >= ?
-       ORDER BY durationSecs DESC
-       LIMIT ?`,
-      [urlPrefix + '%', minSeconds, limit]
-    );
-    if (!base.length) return res.json([]);
+    const result = await withSessionCache(req, async () => {
+      const [base] = await dbPool.query(
+        `SELECT
+           session_id,
+           MIN(COALESCE(client_timestamp, server_timestamp)) AS firstSeen,
+           MAX(COALESCE(client_timestamp, server_timestamp)) AS lastSeen,
+           TIMESTAMPDIFF(SECOND,
+             MIN(COALESCE(client_timestamp, server_timestamp)),
+             MAX(COALESCE(client_timestamp, server_timestamp))) AS durationSecs,
+           SUBSTRING_INDEX(GROUP_CONCAT(ip ORDER BY id DESC SEPARATOR '||'), '||', 1) AS ip,
+           MAX(CASE WHEN type = 'submit_click' THEN 1 ELSE 0 END) = 1 AS submitted
+         FROM events
+         WHERE type != 'load' AND session_id IN (
+           SELECT DISTINCT session_id FROM events WHERE url LIKE ? AND session_id IS NOT NULL
+         )
+         GROUP BY session_id
+         HAVING durationSecs >= ?
+         ORDER BY durationSecs DESC
+         LIMIT ?`,
+        [urlPrefix + '%', minSeconds, limit]
+      );
+      if (!base.length) return [];
 
-    const ids = base.map((r) => r.session_id);
-    const placeholders = ids.map(() => '?').join(',');
+      const ids = base.map((r) => r.session_id);
+      const placeholders = ids.map(() => '?').join(',');
 
-    // Lean columns for the page-time breakdown - no payload here, so this
-    // stays cheap even for sessions with a lot of events.
-    const [eventRows] = await dbPool.query(
-      `SELECT session_id, url, COALESCE(client_timestamp, server_timestamp) AS ts
-       FROM events
-       WHERE type != 'load' AND session_id IN (${placeholders})
-       ORDER BY session_id, id ASC`,
-      ids
-    );
-    const eventsBySession = {};
-    eventRows.forEach((r) => { (eventsBySession[r.session_id] = eventsBySession[r.session_id] || []).push(r); });
+      // Lean columns for the page-time breakdown - no payload here, so
+      // this stays cheap even for sessions with a lot of events.
+      const [eventRows] = await dbPool.query(
+        `SELECT session_id, url, COALESCE(client_timestamp, server_timestamp) AS ts
+         FROM events
+         WHERE type != 'load' AND session_id IN (${placeholders})
+         ORDER BY session_id, id ASC`,
+        ids
+      );
+      const eventsBySession = {};
+      eventRows.forEach((r) => { (eventsBySession[r.session_id] = eventsBySession[r.session_id] || []).push(r); });
 
-    // Payload only for 'activity' rows, since that's the only type carrying
-    // mouseClicks - not dragging every row's JSON through the query above.
-    const [activityRows] = await dbPool.query(
-      `SELECT session_id, payload
-       FROM events
-       WHERE type = 'activity' AND session_id IN (${placeholders})`,
-      ids
-    );
-    const clicksBySession = {};
-    activityRows.forEach((r) => {
-      const clicks = (r.payload || {}).mouseClicks;
-      if (!Array.isArray(clicks)) return;
-      const c = clicksBySession[r.session_id] || { total: 0, useful: 0 };
-      clicks.forEach((click) => { c.total++; if (click.useful) c.useful++; });
-      clicksBySession[r.session_id] = c;
+      // Payload only for 'activity' rows, since that's the only type
+      // carrying mouseClicks - not dragging every row's JSON through the
+      // query above.
+      const [activityRows] = await dbPool.query(
+        `SELECT session_id, payload
+         FROM events
+         WHERE type = 'activity' AND session_id IN (${placeholders})`,
+        ids
+      );
+      const clicksBySession = {};
+      activityRows.forEach((r) => {
+        const clicks = (r.payload || {}).mouseClicks;
+        if (!Array.isArray(clicks)) return;
+        const c = clicksBySession[r.session_id] || { total: 0, useful: 0 };
+        clicks.forEach((click) => { c.total++; if (click.useful) c.useful++; });
+        clicksBySession[r.session_id] = c;
+      });
+
+      const userNumberByIp = await lookupUserNumbers(base.map((r) => r.ip));
+
+      // "Did this visitor also check out the main site during this
+      // visit?" can't be answered by session_id at all - sessionStorage
+      // (and therefore session_id) is scoped per origin, so a test.
+      // shekarkrishnamoorthy.com session can never literally share a
+      // session_id with a shekarkrishnamoorthy.com one, by construction.
+      // IP is the only cross-origin signal available (the same one User N
+      // identity is already built on) - "yes" means this visitor's IP has
+      // been seen on the main domain at some point, not necessarily
+      // during this exact visit window.
+      const ips = [...new Set(base.map((r) => r.ip).filter(Boolean))];
+      let mainDomainIps = new Set();
+      if (ips.length) {
+        const ipPlaceholders = ips.map(() => '?').join(',');
+        const [mainDomainRows] = await dbPool.query(
+          `SELECT DISTINCT ip FROM events WHERE url LIKE 'https://shekarkrishnamoorthy.com/%' AND ip IN (${ipPlaceholders})`,
+          ips
+        );
+        mainDomainIps = new Set(mainDomainRows.map((r) => r.ip));
+      }
+
+      return base.map((r) => ({
+        session_id: r.session_id,
+        ip: r.ip,
+        userNumber: r.ip ? (userNumberByIp[r.ip] ?? null) : null,
+        firstSeen: r.firstSeen,
+        lastSeen: r.lastSeen,
+        durationSecs: r.durationSecs,
+        submitted: r.submitted,
+        returnedToMainDomain: r.ip ? mainDomainIps.has(r.ip) : null,
+        pageTime: computePageBreakdown(eventsBySession[r.session_id] || []),
+        totalClicks: (clicksBySession[r.session_id] || { total: 0 }).total,
+        usefulClicks: (clicksBySession[r.session_id] || { useful: 0 }).useful
+      }));
     });
 
-    const userNumberByIp = await lookupUserNumbers(base.map((r) => r.ip));
-
-    // "Did this visitor also check out the main site during this visit?"
-    // can't be answered by session_id at all - sessionStorage (and
-    // therefore session_id) is scoped per origin, so a test.
-    // shekarkrishnamoorthy.com session can never literally share a
-    // session_id with a shekarkrishnamoorthy.com one, by construction. IP
-    // is the only cross-origin signal available (the same one User N
-    // identity is already built on) - "yes" means this visitor's IP has
-    // been seen on the main domain at some point, not necessarily during
-    // this exact visit window.
-    const ips = [...new Set(base.map((r) => r.ip).filter(Boolean))];
-    let mainDomainIps = new Set();
-    if (ips.length) {
-      const ipPlaceholders = ips.map(() => '?').join(',');
-      const [mainDomainRows] = await dbPool.query(
-        `SELECT DISTINCT ip FROM events WHERE url LIKE 'https://shekarkrishnamoorthy.com/%' AND ip IN (${ipPlaceholders})`,
-        ips
-      );
-      mainDomainIps = new Set(mainDomainRows.map((r) => r.ip));
-    }
-
-    res.json(base.map((r) => ({
-      session_id: r.session_id,
-      ip: r.ip,
-      userNumber: r.ip ? (userNumberByIp[r.ip] ?? null) : null,
-      firstSeen: r.firstSeen,
-      lastSeen: r.lastSeen,
-      durationSecs: r.durationSecs,
-      submitted: r.submitted,
-      returnedToMainDomain: r.ip ? mainDomainIps.has(r.ip) : null,
-      pageTime: computePageBreakdown(eventsBySession[r.session_id] || []),
-      totalClicks: (clicksBySession[r.session_id] || { total: 0 }).total,
-      usefulClicks: (clicksBySession[r.session_id] || { useful: 0 }).useful
-    })));
+    res.json(result);
   } catch (err) {
     console.error('[GET /api/behavioral/site-sessions] error:', err.message);
     res.status(500).json({ error: 'database error' });
@@ -1446,63 +1539,65 @@ app.get('/api/behavioral/page-visits', requireAuthApi, async (req, res) => {
   const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 500);
 
   try {
-    const [sessionIdRows] = await dbPool.query(
-      `SELECT session_id, SUBSTRING_INDEX(GROUP_CONCAT(ip ORDER BY id DESC SEPARATOR '||'), '||', 1) AS ip
-       FROM events WHERE url = ? AND session_id IS NOT NULL GROUP BY session_id`,
-      [pageUrl]
-    );
-    if (!sessionIdRows.length) return res.json([]);
-    const ids = sessionIdRows.map((r) => r.session_id);
-    const ipBySession = {};
-    sessionIdRows.forEach((r) => { ipBySession[r.session_id] = r.ip; });
-    const placeholders = ids.map(() => '?').join(',');
+    const results = await withSessionCache(req, async () => {
+      const [sessionIdRows] = await dbPool.query(
+        `SELECT session_id, SUBSTRING_INDEX(GROUP_CONCAT(ip ORDER BY id DESC SEPARATOR '||'), '||', 1) AS ip
+         FROM events WHERE url = ? AND session_id IS NOT NULL GROUP BY session_id`,
+        [pageUrl]
+      );
+      if (!sessionIdRows.length) return [];
+      const ids = sessionIdRows.map((r) => r.session_id);
+      const ipBySession = {};
+      sessionIdRows.forEach((r) => { ipBySession[r.session_id] = r.ip; });
+      const placeholders = ids.map(() => '?').join(',');
 
-    // Full session context is needed here (not just this page's own rows) -
-    // a block's dwell time depends on when the NEXT block (possibly a
-    // different page) starts.
-    const [eventRows] = await dbPool.query(
-      `SELECT session_id, url, COALESCE(client_timestamp, server_timestamp) AS ts
-       FROM events
-       WHERE type != 'load' AND session_id IN (${placeholders})
-       ORDER BY session_id, id ASC`,
-      ids
-    );
-    const eventsBySession = {};
-    eventRows.forEach((r) => { (eventsBySession[r.session_id] = eventsBySession[r.session_id] || []).push(r); });
+      // Full session context is needed here (not just this page's own
+      // rows) - a block's dwell time depends on when the NEXT block
+      // (possibly a different page) starts.
+      const [eventRows] = await dbPool.query(
+        `SELECT session_id, url, COALESCE(client_timestamp, server_timestamp) AS ts
+         FROM events
+         WHERE type != 'load' AND session_id IN (${placeholders})
+         ORDER BY session_id, id ASC`,
+        ids
+      );
+      const eventsBySession = {};
+      eventRows.forEach((r) => { (eventsBySession[r.session_id] = eventsBySession[r.session_id] || []).push(r); });
 
-    const [activityRows] = await dbPool.query(
-      `SELECT session_id, payload
-       FROM events
-       WHERE type = 'activity' AND url = ? AND session_id IN (${placeholders})`,
-      [pageUrl, ...ids]
-    );
-    const clicksBySession = {};
-    activityRows.forEach((r) => {
-      const clicks = (r.payload || {}).mouseClicks;
-      if (!Array.isArray(clicks)) return;
-      const c = clicksBySession[r.session_id] || { total: 0, useful: 0 };
-      clicks.forEach((click) => { c.total++; if (click.useful) c.useful++; });
-      clicksBySession[r.session_id] = c;
+      const [activityRows] = await dbPool.query(
+        `SELECT session_id, payload
+         FROM events
+         WHERE type = 'activity' AND url = ? AND session_id IN (${placeholders})`,
+        [pageUrl, ...ids]
+      );
+      const clicksBySession = {};
+      activityRows.forEach((r) => {
+        const clicks = (r.payload || {}).mouseClicks;
+        if (!Array.isArray(clicks)) return;
+        const c = clicksBySession[r.session_id] || { total: 0, useful: 0 };
+        clicks.forEach((click) => { c.total++; if (click.useful) c.useful++; });
+        clicksBySession[r.session_id] = c;
+      });
+
+      const userNumberByIp = await lookupUserNumbers(Object.values(ipBySession));
+
+      return ids.map((sessionId) => {
+        const pageTime = computePageBreakdown(eventsBySession[sessionId] || []);
+        const durationOnPage = pageTime[normalizedTarget] || 0;
+        const clicks = clicksBySession[sessionId] || { total: 0, useful: 0 };
+        const ip = ipBySession[sessionId];
+        return {
+          session_id: sessionId,
+          ip: ip || null,
+          userNumber: ip ? (userNumberByIp[ip] ?? null) : null,
+          durationOnPageSecs: Math.round(durationOnPage),
+          totalClicks: clicks.total,
+          usefulClicks: clicks.useful
+        };
+      }).filter((r) => r.durationOnPageSecs >= minSeconds)
+        .sort((a, b) => b.durationOnPageSecs - a.durationOnPageSecs)
+        .slice(0, limit);
     });
-
-    const userNumberByIp = await lookupUserNumbers(Object.values(ipBySession));
-
-    const results = ids.map((sessionId) => {
-      const pageTime = computePageBreakdown(eventsBySession[sessionId] || []);
-      const durationOnPage = pageTime[normalizedTarget] || 0;
-      const clicks = clicksBySession[sessionId] || { total: 0, useful: 0 };
-      const ip = ipBySession[sessionId];
-      return {
-        session_id: sessionId,
-        ip: ip || null,
-        userNumber: ip ? (userNumberByIp[ip] ?? null) : null,
-        durationOnPageSecs: Math.round(durationOnPage),
-        totalClicks: clicks.total,
-        usefulClicks: clicks.useful
-      };
-    }).filter((r) => r.durationOnPageSecs >= minSeconds)
-      .sort((a, b) => b.durationOnPageSecs - a.durationOnPageSecs)
-      .slice(0, limit);
 
     res.json(results);
   } catch (err) {
@@ -1528,26 +1623,28 @@ app.get('/api/behavioral/page-visits', requireAuthApi, async (req, res) => {
 // disappear because the list changed.
 app.get('/api/behavioral/project-popularity', requirePageApi('projects'), async (req, res) => {
   try {
-    const [[latestPageView]] = await dbPool.query(
-      "SELECT payload FROM events WHERE type = 'project_page_view' ORDER BY id DESC LIMIT 1"
-    );
-    const knownTitles = latestPageView && Array.isArray(latestPageView.payload.projectTitles)
-      ? latestPageView.payload.projectTitles
-      : [];
+    const rows = await withSessionCache(req, async () => {
+      const [[latestPageView]] = await dbPool.query(
+        "SELECT payload FROM events WHERE type = 'project_page_view' ORDER BY id DESC LIMIT 1"
+      );
+      const knownTitles = latestPageView && Array.isArray(latestPageView.payload.projectTitles)
+        ? latestPageView.payload.projectTitles
+        : [];
 
-    const [clickRows] = await dbPool.query(`
-      SELECT JSON_UNQUOTE(JSON_EXTRACT(payload, '$.projectTitle')) AS projectTitle, COUNT(*) AS clicks
-      FROM events
-      WHERE type = 'project_click' AND JSON_EXTRACT(payload, '$.projectTitle') IS NOT NULL
-      GROUP BY projectTitle
-    `);
-    const clicksByTitle = {};
-    clickRows.forEach((r) => { clicksByTitle[r.projectTitle] = r.clicks; });
+      const [clickRows] = await dbPool.query(`
+        SELECT JSON_UNQUOTE(JSON_EXTRACT(payload, '$.projectTitle')) AS projectTitle, COUNT(*) AS clicks
+        FROM events
+        WHERE type = 'project_click' AND JSON_EXTRACT(payload, '$.projectTitle') IS NOT NULL
+        GROUP BY projectTitle
+      `);
+      const clicksByTitle = {};
+      clickRows.forEach((r) => { clicksByTitle[r.projectTitle] = r.clicks; });
 
-    const allTitles = new Set([...knownTitles, ...Object.keys(clicksByTitle)]);
-    const rows = [...allTitles]
-      .map((projectTitle) => ({ projectTitle, clicks: clicksByTitle[projectTitle] || 0 }))
-      .sort((a, b) => b.clicks - a.clicks);
+      const allTitles = new Set([...knownTitles, ...Object.keys(clicksByTitle)]);
+      return [...allTitles]
+        .map((projectTitle) => ({ projectTitle, clicks: clicksByTitle[projectTitle] || 0 }))
+        .sort((a, b) => b.clicks - a.clicks);
+    });
 
     res.json(rows);
   } catch (err) {
@@ -1563,56 +1660,60 @@ app.get('/api/behavioral/project-popularity', requirePageApi('projects'), async 
 app.get('/api/behavioral/project-click-sequence', requirePageApi('projects'), async (req, res) => {
   const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 20, 1), 200);
   try {
-    const [sessionRows] = await dbPool.query(
-      `SELECT session_id,
-              SUBSTRING_INDEX(GROUP_CONCAT(ip ORDER BY id DESC SEPARATOR '||'), '||', 1) AS ip,
-              MAX(COALESCE(client_timestamp, server_timestamp)) AS lastClick
-       FROM events
-       WHERE type = 'project_click' AND session_id IS NOT NULL
-       GROUP BY session_id
-       ORDER BY lastClick DESC
-       LIMIT ?`,
-      [limit]
-    );
-    if (!sessionRows.length) return res.json([]);
-    const ids = sessionRows.map((r) => r.session_id);
-    const placeholders = ids.map(() => '?').join(',');
+    const result = await withSessionCache(req, async () => {
+      const [sessionRows] = await dbPool.query(
+        `SELECT session_id,
+                SUBSTRING_INDEX(GROUP_CONCAT(ip ORDER BY id DESC SEPARATOR '||'), '||', 1) AS ip,
+                MAX(COALESCE(client_timestamp, server_timestamp)) AS lastClick
+         FROM events
+         WHERE type = 'project_click' AND session_id IS NOT NULL
+         GROUP BY session_id
+         ORDER BY lastClick DESC
+         LIMIT ?`,
+        [limit]
+      );
+      if (!sessionRows.length) return [];
+      const ids = sessionRows.map((r) => r.session_id);
+      const placeholders = ids.map(() => '?').join(',');
 
-    const [clickRows] = await dbPool.query(
-      `SELECT session_id,
-              JSON_UNQUOTE(JSON_EXTRACT(payload, '$.projectTitle')) AS projectTitle,
-              COALESCE(client_timestamp, server_timestamp) AS ts
-       FROM events
-       WHERE type = 'project_click' AND session_id IN (${placeholders})
-       ORDER BY session_id, id ASC`,
-      ids
-    );
-    const bySession = {};
-    clickRows.forEach((r) => {
-      (bySession[r.session_id] = bySession[r.session_id] || []).push({ projectTitle: r.projectTitle, timestamp: r.ts });
+      const [clickRows] = await dbPool.query(
+        `SELECT session_id,
+                JSON_UNQUOTE(JSON_EXTRACT(payload, '$.projectTitle')) AS projectTitle,
+                COALESCE(client_timestamp, server_timestamp) AS ts
+         FROM events
+         WHERE type = 'project_click' AND session_id IN (${placeholders})
+         ORDER BY session_id, id ASC`,
+        ids
+      );
+      const bySession = {};
+      clickRows.forEach((r) => {
+        (bySession[r.session_id] = bySession[r.session_id] || []).push({ projectTitle: r.projectTitle, timestamp: r.ts });
+      });
+
+      // Last recorded moment on the Projects page itself (any event type,
+      // not just clicks) for each of these sessions - lets the frontend
+      // show how long they stuck around after their last click, not just
+      // the gaps between clicks.
+      const [lastSeenRows] = await dbPool.query(
+        `SELECT session_id, MAX(COALESCE(client_timestamp, server_timestamp)) AS lastSeenOnPage
+         FROM events
+         WHERE url = 'https://shekarkrishnamoorthy.com/important/projects.html' AND session_id IN (${placeholders})
+         GROUP BY session_id`,
+        ids
+      );
+      const lastSeenBySession = {};
+      lastSeenRows.forEach((r) => { lastSeenBySession[r.session_id] = r.lastSeenOnPage; });
+
+      const userNumberByIp = await lookupUserNumbers(sessionRows.map((r) => r.ip));
+      return sessionRows.map((r) => ({
+        session_id: r.session_id,
+        userNumber: r.ip ? (userNumberByIp[r.ip] ?? null) : null,
+        clicks: bySession[r.session_id] || [],
+        lastSeenOnPage: lastSeenBySession[r.session_id] || null
+      }));
     });
 
-    // Last recorded moment on the Projects page itself (any event type, not
-    // just clicks) for each of these sessions - lets the frontend show how
-    // long they stuck around after their last click, not just the gaps
-    // between clicks.
-    const [lastSeenRows] = await dbPool.query(
-      `SELECT session_id, MAX(COALESCE(client_timestamp, server_timestamp)) AS lastSeenOnPage
-       FROM events
-       WHERE url = 'https://shekarkrishnamoorthy.com/important/projects.html' AND session_id IN (${placeholders})
-       GROUP BY session_id`,
-      ids
-    );
-    const lastSeenBySession = {};
-    lastSeenRows.forEach((r) => { lastSeenBySession[r.session_id] = r.lastSeenOnPage; });
-
-    const userNumberByIp = await lookupUserNumbers(sessionRows.map((r) => r.ip));
-    res.json(sessionRows.map((r) => ({
-      session_id: r.session_id,
-      userNumber: r.ip ? (userNumberByIp[r.ip] ?? null) : null,
-      clicks: bySession[r.session_id] || [],
-      lastSeenOnPage: lastSeenBySession[r.session_id] || null
-    })));
+    res.json(result);
   } catch (err) {
     console.error('[GET /api/behavioral/project-click-sequence] error:', err.message);
     res.status(500).json({ error: 'database error' });
