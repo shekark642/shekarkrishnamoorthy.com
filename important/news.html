@@ -120,17 +120,17 @@
 
 <script>
   // Same NewsAPI.org top-headlines endpoint used on shekark642.github.io/portfolio/news/.
-  // That page proxies through corsproxy.io (NewsAPI's free tier blocks direct browser
-  // requests from a deployed, non-localhost origin) - but corsproxy.io retired its free
-  // anonymous proxy, so this page uses api.allorigins.win instead, confirmed working.
-  const apiKey = '890434a0b66748c9b504cc28df6511ff';
+  // That page routes the browser straight to a public CORS proxy (NewsAPI's free tier
+  // blocks direct browser requests from a deployed, non-localhost origin) - but every
+  // free anonymous proxy tried here (corsproxy.io, allorigins.win, corsproxy.org) was
+  // either shut down or too flaky to rely on. Since this server already runs PHP,
+  // news-proxy.php makes the NewsAPI call server-side and this page just fetches that,
+  // same-origin - no CORS proxy needed, and the API key never reaches page JS.
   let currentCategory = '';
   let currentSort = 'popularity';
 
   function loadNews() {
-    let baseUrl = `https://newsapi.org/v2/top-headlines?country=us`;
-    if (currentCategory) baseUrl += `&category=${currentCategory}`;
-    const url = `https://api.allorigins.win/raw?url=${encodeURIComponent(baseUrl + `&apiKey=${apiKey}`)}`;
+    const url = `news-proxy.php${currentCategory ? `?category=${currentCategory}` : ""}`;
 
     document.getElementById('news').textContent = 'Loading news...';
     fetch(url)
