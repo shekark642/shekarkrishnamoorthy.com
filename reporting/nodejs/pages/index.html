@@ -86,6 +86,23 @@
     </div>
   </div>
 
+  <div class="card">
+    <h2>Metric 5: Visitor Type (behavioral)</h2>
+    <p style="margin:-0.4rem 0 0.9rem;color:#64748b;font-size:0.82rem">One classification per session, from navigator.webdriver and User-Agent pattern matching on each visit's load event - a heuristic, not a guarantee.</p>
+    <div id="visitorTypeWrap" style="max-width:280px;margin:0 auto"><canvas id="visitorTypeChart"></canvas></div>
+  </div>
+
+  <div class="card" id="flaggedCard" style="display:none">
+    <h2>Flagged Clients</h2>
+    <p style="margin:-0.4rem 0 0.9rem;color:#64748b;font-size:0.82rem">Anything a request/client did that reads as suspicious or malicious - rate-limit floods, oversized payloads, injection-shaped inputs, failed logins. Super admin only.</p>
+    <div id="flaggedWrap">
+      <table>
+        <thead><tr><th>When</th><th>Reason</th><th>Endpoint</th><th>IP</th><th>Details</th></tr></thead>
+        <tbody id="flaggedRows"></tbody>
+      </table>
+    </div>
+  </div>
+
   <div class="cta-row">
     <a class="btn" href="/performance.html">Generate Detailed Report &rarr;</a>
     <a class="btn secondary" href="/reports.html">View Saved Reports</a>
@@ -113,6 +130,23 @@
     });
   }
 
+  function esc(s) { return String(s).replace(/</g, "&lt;"); }
+
+  function loadFlaggedClients() {
+    document.getElementById("flaggedCard").style.display = "block";
+    fetch("/api/flagged-clients?limit=50").then(function (r) { return r.json(); }).then(function (rows) {
+      document.getElementById("flaggedRows").innerHTML = rows.length
+        ? rows.map(function (r) {
+            return "<tr><td class='mono'>" + (r.flagged_at || "") + "</td>" +
+              "<td>" + esc(r.reason) + "</td>" +
+              "<td class='mono'>" + esc(r.method) + " " + esc(r.endpoint) + "</td>" +
+              "<td class='mono'>" + esc(r.ip || "") + "</td>" +
+              "<td class='mono'>" + esc(JSON.stringify(r.details)) + "</td></tr>";
+          }).join("")
+        : "<tr><td colspan='5' class='no-access'>Nothing flagged yet.</td></tr>";
+    });
+  }
+
   fetch("/auth/me").then(function (r) { return r.json(); }).then(function (me) {
     document.getElementById("welcomeName").textContent = me.username;
     document.getElementById("welcomeRole").textContent = me.role.replace("_", " ");
@@ -120,6 +154,7 @@
       var link = document.getElementById("adminLink");
       link.style.display = "inline";
       link.href = "/users.html";
+      loadFlaggedClients();
     }
   });
 
@@ -225,6 +260,21 @@
         "<td>" + (r.submitted ? "✅" : "—") + "</td></tr>";
     }).join("");
   }, function () { noAccess("sessionsWrap", "behavioral"); });
+
+  // --- Metric 5: Visitor Type (pie chart - bot vs human, one slice each) ---
+  fetchScoped("/api/behavioral/visitor-types", function (data) {
+    new Chart(document.getElementById("visitorTypeChart"), {
+      type: "pie",
+      data: {
+        labels: ["Human", "Bot"],
+        datasets: [{
+          data: [data.human, data.bot],
+          backgroundColor: ["#0284c7", "#db2777"]
+        }]
+      },
+      options: { responsive: true, plugins: { legend: { position: "bottom" } } }
+    });
+  }, function () { noAccess("visitorTypeWrap", "behavioral"); });
 })();
 </script>
 </body>

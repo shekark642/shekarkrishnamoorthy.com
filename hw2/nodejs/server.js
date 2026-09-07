@@ -494,6 +494,30 @@ function broadcastLive(payload) {
   }
 }
 
+// A place to store anything a request/client did that reads as suspicious
+// or malicious - not the routine stuff (a missing field, an unauthenticated
+// 401), but a flood, an oversized payload, an injection-shaped input. Both
+// this app and reporting/nodejs write to the same table in the same
+// analytics DB, same pattern as `events`.
+async function flagClient(pool, req, reason, details, sessionId) {
+  try {
+    await pool.execute(
+      'INSERT INTO flagged_clients (ip, user_agent, reason, endpoint, method, session_id, details) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [
+        req.ip || null,
+        (req.headers['user-agent'] || '').slice(0, 512) || null,
+        reason,
+        (req.originalUrl || req.path || '').slice(0, 255),
+        req.method,
+        typeof sessionId === 'string' ? sessionId.slice(0, 64) : null,
+        JSON.stringify(details || {})
+      ]
+    );
+  } catch (err) {
+    console.error('[flagClient] error:', err.message);
+  }
+}
+
 // A beacon flood (scripted or accidental) pollutes every aggregate the
 // reporting dashboard computes and grows the table forever, and /collect
 // has no auth to gate it - it must accept beacons from any origin's
@@ -502,12 +526,17 @@ function broadcastLive(payload) {
 // 10s, and one 'exit' per page) while still capping a flood at a fixed,
 // small cost. sendBeacon can't read the response anyway, and collector.js's
 // fetch fallback already swallows failures, so a 429 here is silent and
-// safe on the client - no retry storm.
+// safe on the client - no retry storm. A client that actually hits this
+// limit is exactly the kind of thing flagged_clients exists for.
 const collectLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 60,
   standardHeaders: true,
-  legacyHeaders: false
+  legacyHeaders: false,
+  handler: (req, res) => {
+    flagClient(dbPool, req, 'rate_limit_exceeded', { windowMs: 60000, max: 60 });
+    res.sendStatus(429);
+  }
 });
 
 app.post('/collect', collectLimiter, async (req, res) => {
@@ -519,6 +548,8 @@ app.post('/collect', collectLimiter, async (req, res) => {
 
   const size = Buffer.byteLength(JSON.stringify(payload), 'utf8');
   if (size > 50 * 1024) {
+    flagClient(dbPool, req, 'oversized_payload', { sizeBytes: size },
+      typeof payload.session === 'string' ? payload.session : null);
     return res.status(413).json({ error: 'Payload too large' });
   }
 

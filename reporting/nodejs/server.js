@@ -208,6 +208,29 @@ function requireRolePage(...roles) {
 
 // --- Auth routes ---
 
+// A place to store anything a request/client did that reads as suspicious
+// or malicious - repeated failed logins, injection-shaped inputs - not the
+// routine stuff. Shared with hw2/nodejs's /collect, same table in the same
+// analytics DB (each app writes through its own dbPool).
+async function flagClient(req, reason, details, sessionId) {
+  try {
+    await dbPool.execute(
+      'INSERT INTO flagged_clients (ip, user_agent, reason, endpoint, method, session_id, details) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [
+        req.ip || null,
+        (req.headers['user-agent'] || '').slice(0, 512) || null,
+        reason,
+        (req.originalUrl || req.path || '').slice(0, 255),
+        req.method,
+        typeof sessionId === 'string' ? sessionId.slice(0, 64) : null,
+        JSON.stringify(details || {})
+      ]
+    );
+  } catch (err) {
+    console.error('[flagClient] error:', err.message);
+  }
+}
+
 app.post('/auth/login', async (req, res) => {
   const body = req.body || {};
   const username = body.username;
@@ -221,11 +244,17 @@ app.post('/auth/login', async (req, res) => {
       'SELECT id, username, password_hash, role FROM users WHERE username = ? LIMIT 1',
       [username]
     );
-    if (!rows.length) return res.status(401).json({ error: 'invalid username or password' });
+    if (!rows.length) {
+      flagClient(req, 'failed_login', { usernameAttempted: username.slice(0, 64), cause: 'no such user' });
+      return res.status(401).json({ error: 'invalid username or password' });
+    }
 
     const user = rows[0];
     const match = await bcrypt.compare(password, user.password_hash);
-    if (!match) return res.status(401).json({ error: 'invalid username or password' });
+    if (!match) {
+      flagClient(req, 'failed_login', { usernameAttempted: username.slice(0, 64), cause: 'wrong password' });
+      return res.status(401).json({ error: 'invalid username or password' });
+    }
 
     const token = await createSession(user);
 
@@ -490,12 +519,21 @@ function buildUrlPrefixClause(req) {
   return null;
 }
 
+// Characters/keywords that show up in an actual injection attempt but never
+// in a legitimate JSON path (which is just $.foo.bar[0] segments) - a typo'd
+// path fails JSON_PATH_RE too, but this narrower check is what separates
+// "made a mistake" from "tried something."
+const INJECTION_SHAPED_RE = /['";]|--|\/\*|\bunion\b|\bselect\b|\bdrop\b|\bor\s+1=1\b/i;
+
 async function runCustomMetric(whereSql, params, req, res) {
   const metricPath = req.query.metricPath;
   const metricAgg = (req.query.metricAgg || 'avg').toLowerCase();
   if (typeof metricPath !== 'string' || !metricPath) return { customMetric: null };
 
   if (!JSON_PATH_RE.test(metricPath)) {
+    if (INJECTION_SHAPED_RE.test(metricPath)) {
+      flagClient(req, 'injection_attempt', { field: 'metricPath', value: metricPath.slice(0, 500) });
+    }
     res.status(400).json({ error: 'metricPath must look like a JSON path, e.g. $.vitals.lcp.value' });
     return { handled: true };
   }
@@ -669,6 +707,36 @@ app.get('/api/behavioral/sessions', requireSectionApi('behavioral'), async (req,
     res.json(rows);
   } catch (err) {
     console.error('[GET /api/behavioral/sessions] error:', err.message);
+    res.status(500).json({ error: 'database error' });
+  }
+});
+
+// GET /api/behavioral/visitor-types - bot vs. human, one classification per
+// session (not per event). is_bot is a generated column on `events`,
+// computed straight from each 'load' event's own JSON payload - true if
+// navigator.webdriver was set (the default for Selenium/Puppeteer/
+// Playwright) or the User-Agent string matches a known bot/crawler/tool
+// pattern. A session can have more than one 'load' event (one per page
+// visited); MAX() means one bot-flagged page load is enough to call the
+// whole session a bot. This is a heuristic, not a guarantee - a bot that
+// spoofs a normal browser UA and clears navigator.webdriver evades both
+// signals, same limitation every client-side bot detector has.
+app.get('/api/behavioral/visitor-types', requireSectionApi('behavioral'), async (req, res) => {
+  try {
+    const [[row]] = await dbPool.query(`
+      SELECT
+        SUM(sessionIsBot = 1) AS botSessions,
+        SUM(sessionIsBot = 0) AS humanSessions
+      FROM (
+        SELECT session_id, MAX(is_bot) AS sessionIsBot
+        FROM events
+        WHERE type = 'load' AND session_id IS NOT NULL
+        GROUP BY session_id
+      ) t
+    `);
+    res.json({ bot: Number(row.botSessions) || 0, human: Number(row.humanSessions) || 0 });
+  } catch (err) {
+    console.error('[GET /api/behavioral/visitor-types] error:', err.message);
     res.status(500).json({ error: 'database error' });
   }
 });
@@ -917,6 +985,25 @@ app.delete('/api/saved-reports/:id', requireRoleApi('super_admin', 'analyst'), a
     res.sendStatus(204);
   } catch (err) {
     console.error('[DELETE /api/saved-reports/:id] error:', err.message);
+    res.status(500).json({ error: 'database error' });
+  }
+});
+
+// --- Flagged clients ---
+//
+// Read access, super_admin only - this is who-did-what-suspicious data
+// (IPs, user agents, attempted usernames), not a business-analytics
+// section, so it doesn't fit the performance/behavioral scope model at all.
+app.get('/api/flagged-clients', requireRoleApi('super_admin'), async (req, res) => {
+  const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 100, 1), 1000);
+  try {
+    const [rows] = await dbPool.query(
+      'SELECT id, ip, user_agent, reason, endpoint, method, session_id, details, flagged_at FROM flagged_clients ORDER BY id DESC LIMIT ?',
+      [limit]
+    );
+    res.json(rows);
+  } catch (err) {
+    console.error('[GET /api/flagged-clients] error:', err.message);
     res.status(500).json({ error: 'database error' });
   }
 });

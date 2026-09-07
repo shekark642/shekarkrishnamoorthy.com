@@ -120,6 +120,11 @@
     }
     return {
       userAgent: navigator.userAgent,
+      // The single most reliable automation signal available in JS:
+      // Selenium/Puppeteer/Playwright all set this true by default (it only
+      // reads false if a bot has deliberately patched it out - the User-Agent
+      // regex on the server side is the fallback for that case).
+      webdriver: navigator.webdriver === true,
       language: navigator.language,
       cookiesAccepted: navigator.cookieEnabled,
       // If this script is running at all, JavaScript is enabled by
