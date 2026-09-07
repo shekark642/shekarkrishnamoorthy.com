@@ -63,6 +63,27 @@
     color: var(--accent);
   }
   .project-desc { margin: 0; font-size: 0.85rem; color: var(--muted); }
+
+  .project-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin-top: 1.5rem;
+  }
+  .project-controls label {
+    font-size: 0.85rem;
+    color: var(--muted);
+  }
+  .project-controls select {
+    font: inherit;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text);
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.4rem 0.7rem;
+  }
 </style>
 </head>
 <body>
@@ -85,35 +106,56 @@
     <p>A growing list of things built outside the graded homework log.</p>
   </div>
 
+  <div class="project-controls">
+    <label for="sortSelect">Sort by</label>
+    <select id="sortSelect">
+      <option value="newest">Newest to Oldest</option>
+      <option value="coolest">Coolest to Lamest</option>
+    </select>
+  </div>
+
   <div class="project-grid" id="projectGrid"></div>
 </main>
 
 <script>
   // Skeleton project data - each real project becomes one object here.
+  // year: numeric, used by the "Newest to Oldest" sort.
+  // coolness: 1-10, used by the "Coolest to Lamest" sort - purely a personal
+  //   ranking you set per project, unrelated to year.
   // image: leave "" for a placeholder box until a real thumbnail exists.
   // url: leave "#" until the project has a real link.
   const projects = [
-    { title: "Project 1", year: "", image: "", desc: "Description coming soon.", url: "#" },
-    { title: "Project 2", year: "", image: "", desc: "Description coming soon.", url: "#" },
-    { title: "Project 3", year: "", image: "", desc: "Description coming soon.", url: "#" },
-    { title: "Project 4", year: "", image: "", desc: "Description coming soon.", url: "#" },
-    { title: "Project 5", year: "", image: "", desc: "Description coming soon.", url: "#" },
-    { title: "Project 6", year: "", image: "", desc: "Description coming soon.", url: "#" },
-    { title: "Project 7", year: "", image: "", desc: "Description coming soon.", url: "#" },
-    { title: "Project 8", year: "", image: "", desc: "Description coming soon.", url: "#" },
+    { title: "Project 1", year: 2024, coolness: 6, image: "", desc: "Description coming soon.", url: "#" },
+    { title: "Project 2", year: 2026, coolness: 9, image: "", desc: "Description coming soon.", url: "#" },
+    { title: "Project 3", year: 2022, coolness: 3, image: "", desc: "Description coming soon.", url: "#" },
+    { title: "Project 4", year: 2025, coolness: 10, image: "", desc: "Description coming soon.", url: "#" },
+    { title: "Project 5", year: 2023, coolness: 1, image: "", desc: "Description coming soon.", url: "#" },
+    { title: "Project 6", year: 2021, coolness: 7, image: "", desc: "Description coming soon.", url: "#" },
+    { title: "Project 7", year: 2020, coolness: 4, image: "", desc: "Description coming soon.", url: "#" },
+    { title: "Project 8", year: 2019, coolness: 8, image: "", desc: "Description coming soon.", url: "#" },
   ];
 
   const grid = document.getElementById("projectGrid");
-  grid.innerHTML = projects.map(p => `
-    <a class="project-card" href="${p.url}">
-      <div class="project-thumb">${p.image ? `<img src="${p.image}" alt="">` : "Image"}</div>
-      <div class="project-info">
-        <h3>${p.title}</h3>
-        <p class="project-year">${p.year || "TBD"}</p>
-        <p class="project-desc">${p.desc}</p>
-      </div>
-    </a>
-  `).join("");
+  const sortSelect = document.getElementById("sortSelect");
+
+  function render(sortBy) {
+    const sorted = [...projects].sort((a, b) =>
+      sortBy === "coolest" ? b.coolness - a.coolness : b.year - a.year
+    );
+    grid.innerHTML = sorted.map(p => `
+      <a class="project-card" href="${p.url}">
+        <div class="project-thumb">${p.image ? `<img src="${p.image}" alt="">` : "Image"}</div>
+        <div class="project-info">
+          <h3>${p.title}</h3>
+          <p class="project-year">${p.year || "TBD"}</p>
+          <p class="project-desc">${p.desc}</p>
+        </div>
+      </a>
+    `).join("");
+  }
+
+  sortSelect.addEventListener("change", () => render(sortSelect.value));
+  render(sortSelect.value);
 </script>
 
 </body>
