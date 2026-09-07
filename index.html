@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Shekar Krishnamoorthy — Home</title>
-<meta name="description" content="Home page for shekarkrishnamoorthy.com — personal site, team page, and homework log.">
+<meta name="description" content="Home page for shekarkrishnamoorthy.com — personal site and team page.">
 <link rel="icon" type="image/svg+xml" href="https://shekarkrishnamoorthy.com/favicon.svg">
 <link rel="prev" href="https://collector.shekarkrishnamoorthy.com/index.html">
 <link rel="next" href="https://shekarkrishnamoorthy.com/members/shekarkrishnamoorthy.html">
@@ -13,24 +13,6 @@
 <!-- HW3 custom analytics collector: static/performance/activity data -->
 <script src="https://collector.shekarkrishnamoorthy.com/collector.js" async></script>
 <style>
-
-  .team-card ul {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 0.6rem;
-  }
-  .team-card li {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.75rem;
-  }
-  .member-name {
-    font-weight: 600;
-  }
 
   /* ---------- Main content ---------- */
   main {
@@ -46,6 +28,7 @@
     padding: 1.5rem;
     display: flex;
     justify-content: center;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 4px 12px rgba(15, 23, 42, 0.05);
   }
   .picture-section svg {
     width: 100%;
@@ -53,43 +36,35 @@
     height: auto;
   }
 
+  .about-layout {
+    display: flex;
+    align-items: center;
+    gap: 1.25rem;
+    flex-wrap: wrap;
+  }
+  .about-photo {
+    width: 120px;
+    height: 120px;
+    border-radius: 50%;
+    object-fit: cover;
+    flex-shrink: 0;
+    border: 2px solid var(--border);
+  }
+  .about-text {
+    flex: 1;
+    min-width: 220px;
+  }
+  .about-bio {
+    margin: 0 0 0.9rem;
+    color: var(--text);
+    line-height: 1.5;
+  }
+
   section.homework-section {
     margin-top: 2.5rem;
   }
   section.homework-section h2 {
     margin-bottom: 0.75rem;
-  }
-  table {
-    width: 100%;
-    border-collapse: collapse;
-    background: var(--card);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    overflow: hidden;
-  }
-  caption {
-    text-align: left;
-    color: var(--muted);
-    padding-bottom: 0.6rem;
-    font-size: 0.9rem;
-  }
-  th, td {
-    text-align: left;
-    padding: 0.85rem 1rem;
-    border-bottom: 1px solid var(--border);
-  }
-  thead th {
-    background: #eef2f7;
-    font-size: 0.85rem;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: var(--muted);
-  }
-  tbody tr:hover {
-    background: #f5f9fc;
-  }
-  tbody tr:last-child td {
-    border-bottom: none;
   }
 
   footer {
@@ -118,27 +93,9 @@
 <main>
   <div class="page-intro">
     <h1>Welcome to Shekar Krishnamoorthy<span style="color:var(--accent2)">.</span>com</h1>
-    <p>A small site running on a DigitalOcean droplet, served by Apache, and built one virtual host at a time.</p>
+    <p>A small site running on a DigitalOcean droplet, served by Apache.</p>
   </div>
 
-  <aside class="card team-card" aria-labelledby="team-heading">
-    <h2 id="team-heading" class="note" style="text-transform:uppercase;letter-spacing:0.08em;margin:0 0 0.75rem">Team Members</h2>
-    <ul>
-      <li>
-        <span class="member-name">Shekar Krishnamoorthy</span>
-        <a class="btn-link" href="/members/shekarkrishnamoorthy.html">About Me</a>
-      </li>
-      <!-- Add one <li> per teammate, same pattern, each linking to /members/&lt;name&gt;.html -->
-    </ul>
-  </aside>
-
-  <!--
-    Picture placeholder: this inline illustration stands in for a real photo so
-    nothing 404s before you upload one. To swap in an actual picture, replace
-    the <svg>...</svg> block below with:
-      <img src="/images/profile.jpg" alt="Shekar Krishnamoorthy" style="max-width:520px;width:100%;border-radius:16px;">
-    and upload the image file to public_html/images/profile.jpg.
-  -->
   <section class="picture-section" aria-label="Featured illustration">
     <svg viewBox="0 0 520 300" role="img" aria-labelledby="illo-title">
       <title id="illo-title">Illustration of a laptop connected to a cloud server</title>
@@ -163,46 +120,22 @@
       <circle cx="255" cy="235" r="4" fill="#db2777"/>
     </svg>
   </section>
-  <section class="homework-section" aria-labelledby="hw-heading">
-    <h2 id="hw-heading">Homework</h2>
-    <table>
-      <caption>Assignments completed for this site, with links and short descriptions.</caption>
-      <thead>
-        <tr>
-          <th scope="col">Assignment</th>
-          <th scope="col">Description</th>
-          <th scope="col">Link</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td>HW1 &mdash; Server Hardening &amp; Deploy Automation</td>
-          <td>Configured HTTPS-only auto-deploy via GitHub webhooks, HTTP Basic Auth, gzip compression, PHP, a custom 404 page, an obscured Server header, and an access log report.</td>
-          <td><a href="/hw1/report.html">View report</a></td>
-        </tr>
-        <tr>
-          <td>HW2 &mdash; Multi-Language Web Demos</td>
-          <td>Hello-world, JSON, environment, echo, and server-side state (session) demos, implemented in NodeJS (Express), Python, and C.</td>
-          <td><a href="/hw2/index.html">View demos</a></td>
-        </tr>
-        <tr>
-          <td>HW3 &mdash; Analytics Collector &amp; Reporting Pipeline</td>
-          <td>A JavaScript analytics collector, a MySQL-backed ingestion/reporting API, and three dashboard patterns (heavy-SQL, client-computed, and a live feed), all hosted on the collector subdomain.</td>
-          <td><a href="https://collector.shekarkrishnamoorthy.com/">View project</a></td>
-        </tr>
-        <tr>
-          <td>HW4 &mdash; Analytics Viz Platform</td>
-          <td>An authenticated reporting dashboard with user management, real charts, and a detailed report answering a specific performance question.</td>
-          <td><a href="https://reporting.shekarkrishnamoorthy.com/">View dashboard</a></td>
-        </tr>
-        <!-- Add one <tr> per assignment, same three-column pattern -->
-      </tbody>
-    </table>
+
+  <!-- Photo: upload the headshot to public_html/images/profile.jpg -->
+  <section class="card" aria-labelledby="about-heading">
+    <h2 id="about-heading" class="note" style="text-transform:uppercase;letter-spacing:0.08em;margin:0 0 0.9rem">About</h2>
+    <div class="about-layout">
+      <img class="about-photo" src="/images/profile.jpg" alt="Shekar Krishnamoorthy">
+      <div class="about-text">
+        <p class="about-bio">Write a short paragraph about yourself here &mdash; this is the main thing visitors to this page should read.</p>
+        <a class="btn-link" href="/members/shekarkrishnamoorthy.html">More about me</a>
+      </div>
+    </div>
   </section>
 
   <section class="homework-section" aria-labelledby="projects-heading">
     <h2 id="projects-heading">Other Projects</h2>
-    <p class="note">More pages beyond the homework log, added as they're built.</p>
+    <p class="note">Homework and other things I've built, all in one place.</p>
     <p><a class="btn-link" href="/important/projects.html">Projects</a></p>
   </section>
 

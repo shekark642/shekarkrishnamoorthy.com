@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Homework — Shekar Krishnamoorthy</title>
+<meta name="description" content="Assignments completed for shekarkrishnamoorthy.com, with links and short descriptions.">
+<link rel="icon" type="image/svg+xml" href="https://shekarkrishnamoorthy.com/favicon.svg">
+<link rel="stylesheet" href="/assets/site-nav.css">
+<style>
+  main { max-width: 1000px; margin: 0 auto; padding: 2.5rem 1.5rem 4rem; }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  caption {
+    text-align: left;
+    color: var(--muted);
+    padding-bottom: 0.6rem;
+    font-size: 0.9rem;
+  }
+  th, td {
+    text-align: left;
+    padding: 0.85rem 1rem;
+    border-bottom: 1px solid var(--border);
+  }
+  thead th {
+    background: #eef2f7;
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--muted);
+  }
+  tbody tr:hover {
+    background: #f5f9fc;
+  }
+  tbody tr:last-child td {
+    border-bottom: none;
+  }
+
+  footer {
+    text-align: center;
+    color: var(--muted);
+    font-size: 0.85rem;
+    padding: 1.5rem;
+  }
+</style>
+</head>
+<body>
+
+<header class="site-header">
+  <img class="site-favicon" src="https://shekarkrishnamoorthy.com/favicon.svg" alt="" width="28" height="28">
+  <div class="site-header-inner">
+    <nav aria-label="Primary">
+      <a href="https://shekarkrishnamoorthy.com/">Home</a>
+      <a href="https://shekarkrishnamoorthy.com/important/projects.html">Projects</a>
+      <a href="https://test.shekarkrishnamoorthy.com/">Music</a>
+      <a href="https://reporting.shekarkrishnamoorthy.com/">Reporting</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <div class="page-intro">
+    <h1>Homework</h1>
+    <p>Assignments completed for this site, with links and short descriptions.</p>
+  </div>
+
+  <table>
+    <caption>Assignments completed for this site, with links and short descriptions.</caption>
+    <thead>
+      <tr>
+        <th scope="col">Assignment</th>
+        <th scope="col">Description</th>
+        <th scope="col">Link</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>HW1 &mdash; Server Hardening &amp; Deploy Automation</td>
+        <td>Configured HTTPS-only auto-deploy via GitHub webhooks, HTTP Basic Auth, gzip compression, PHP, a custom 404 page, an obscured Server header, and an access log report.</td>
+        <td><a href="/hw1/report.html">View report</a></td>
+      </tr>
+      <tr>
+        <td>HW2 &mdash; Multi-Language Web Demos</td>
+        <td>Hello-world, JSON, environment, echo, and server-side state (session) demos, implemented in NodeJS (Express), Python, and C.</td>
+        <td><a href="/hw2/index.html">View demos</a></td>
+      </tr>
+      <tr>
+        <td>HW3 &mdash; Analytics Collector &amp; Reporting Pipeline</td>
+        <td>A JavaScript analytics collector, a MySQL-backed ingestion/reporting API, and three dashboard patterns (heavy-SQL, client-computed, and a live feed), all hosted on the collector subdomain.</td>
+        <td><a href="https://collector.shekarkrishnamoorthy.com/">View project</a></td>
+      </tr>
+      <tr>
+        <td>HW4 &mdash; Analytics Viz Platform</td>
+        <td>An authenticated reporting dashboard with user management, real charts, and a detailed report answering a specific performance question.</td>
+        <td><a href="https://reporting.shekarkrishnamoorthy.com/">View dashboard</a></td>
+      </tr>
+      <!-- Add one <tr> per assignment, same three-column pattern -->
+    </tbody>
+  </table>
+
+  <nav class="page-nav" aria-label="Site tour">
+    <a href="https://shekarkrishnamoorthy.com/important/projects.html" rel="prev">&larr; Projects</a>
+    <a href="https://shekarkrishnamoorthy.com/" rel="next">Home &rarr;</a>
+  </nav>
+</main>
+
+<footer>
+  <p>&copy; 2026 Shekar Krishnamoorthy.</p>
+</footer>
+
+</body>
+</html>
