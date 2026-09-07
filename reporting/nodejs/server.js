@@ -695,7 +695,7 @@ app.get('/api/behavioral/sessions', requireSectionApi('behavioral'), async (req,
            MAX(COALESCE(client_timestamp, server_timestamp))) AS durationSecs,
          COUNT(*) AS eventCount,
          COUNT(DISTINCT url) AS pagesVisited,
-         MAX(url) AS lastUrl,
+         SUBSTRING_INDEX(GROUP_CONCAT(url ORDER BY id DESC SEPARATOR '||'), '||', 1) AS lastUrl,
          MAX(CASE WHEN type = 'submit_click' THEN 1 ELSE 0 END) = 1 AS submitted
        FROM events
        ${whereSql}
@@ -737,6 +737,122 @@ app.get('/api/behavioral/visitor-types', requireSectionApi('behavioral'), async 
     res.json({ bot: Number(row.botSessions) || 0, human: Number(row.humanSessions) || 0 });
   } catch (err) {
     console.error('[GET /api/behavioral/visitor-types] error:', err.message);
+    res.status(500).json({ error: 'database error' });
+  }
+});
+
+// GET /api/behavioral/top-sessions?sortBy=duration|recent - the N sessions
+// (default 5) ranked either by total time on site or by how recently they
+// were last active, each enriched with device info from its 'load' event
+// and activity totals summed across its 'activity' events - three
+// separate, cheap queries scoped to just those session ids, merged in JS,
+// rather than one query dragging every event's full JSON payload through
+// a join.
+//
+// exitUrl is the URL from that session's chronologically LAST event (the
+// one with the highest id) - not MAX(url), which sorts alphabetically and
+// has nothing to do with time. GROUP_CONCAT(... ORDER BY id DESC) then
+// SUBSTRING_INDEX(..., 1) is the standard MySQL idiom for "value from the
+// last row of the group" without a second join.
+app.get('/api/behavioral/top-sessions', requireSectionApi('behavioral'), async (req, res) => {
+  const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 5, 1), 20);
+  const orderCol = req.query.sortBy === 'recent' ? 'lastSeen' : 'durationSecs';
+
+  try {
+    const [base] = await dbPool.query(
+      `SELECT
+         session_id,
+         MIN(COALESCE(client_timestamp, server_timestamp)) AS firstSeen,
+         MAX(COALESCE(client_timestamp, server_timestamp)) AS lastSeen,
+         TIMESTAMPDIFF(SECOND,
+           MIN(COALESCE(client_timestamp, server_timestamp)),
+           MAX(COALESCE(client_timestamp, server_timestamp))) AS durationSecs,
+         COUNT(*) AS eventCount,
+         COUNT(DISTINCT url) AS pagesVisited,
+         SUBSTRING_INDEX(GROUP_CONCAT(url ORDER BY id DESC SEPARATOR '||'), '||', 1) AS exitUrl,
+         MAX(CASE WHEN type = 'submit_click' THEN 1 ELSE 0 END) = 1 AS submitted
+       FROM events
+       WHERE type != 'load' AND session_id IS NOT NULL
+       GROUP BY session_id
+       ORDER BY ${orderCol} DESC
+       LIMIT ?`,
+      [limit]
+    );
+    if (!base.length) return res.json([]);
+
+    const ids = base.map((r) => r.session_id);
+    const placeholders = ids.map(() => '?').join(',');
+
+    const [deviceRows] = await dbPool.query(
+      `SELECT session_id,
+              MAX(JSON_UNQUOTE(JSON_EXTRACT(payload, '$.staticData.userAgent'))) AS userAgent,
+              MAX(JSON_UNQUOTE(JSON_EXTRACT(payload, '$.staticData.language'))) AS language,
+              MAX(JSON_EXTRACT(payload, '$.staticData.screenWidth')) AS screenWidth,
+              MAX(JSON_EXTRACT(payload, '$.staticData.screenHeight')) AS screenHeight,
+              MAX(JSON_EXTRACT(payload, '$.staticData.windowWidth')) AS windowWidth,
+              MAX(JSON_EXTRACT(payload, '$.staticData.windowHeight')) AS windowHeight,
+              MAX(JSON_UNQUOTE(JSON_EXTRACT(payload, '$.staticData.connectionType'))) AS connectionType,
+              MAX(is_bot) AS isBot
+       FROM events
+       WHERE type = 'load' AND session_id IN (${placeholders})
+       GROUP BY session_id`,
+      ids
+    );
+    const deviceBySession = {};
+    deviceRows.forEach((r) => { deviceBySession[r.session_id] = r; });
+
+    const [activityRows] = await dbPool.query(
+      `SELECT session_id,
+              SUM(JSON_LENGTH(payload, '$.mouseMoves')) AS totalMouseMoves,
+              SUM(JSON_LENGTH(payload, '$.mouseClicks')) AS totalClicks,
+              SUM(JSON_LENGTH(payload, '$.scrollEvents')) AS totalScrolls,
+              SUM(JSON_LENGTH(payload, '$.idlePeriods')) AS totalIdlePeriods,
+              SUM(JSON_LENGTH(payload, '$.errors')) AS totalErrors
+       FROM events
+       WHERE type = 'activity' AND session_id IN (${placeholders})
+       GROUP BY session_id`,
+      ids
+    );
+    const activityBySession = {};
+    activityRows.forEach((r) => { activityBySession[r.session_id] = r; });
+
+    res.json(base.map((r) => ({
+      ...r,
+      device: deviceBySession[r.session_id] || null,
+      activity: activityBySession[r.session_id] || null
+    })));
+  } catch (err) {
+    console.error('[GET /api/behavioral/top-sessions] error:', err.message);
+    res.status(500).json({ error: 'database error' });
+  }
+});
+
+// GET /api/behavioral/session-mouse/:sessionId - every recorded mouse
+// move/click for one session, concatenated across however many 'activity'
+// flushes it sent (collector.js flushes every 10s) and sorted back into
+// time order, so it can be replayed as a single continuous path. Payloads
+// are capped at 50KB each and a session realistically sends at most a few
+// dozen flushes, so pulling and merging them in Node is cheap - no need
+// for a database-side array-concatenation trick for this data size.
+app.get('/api/behavioral/session-mouse/:sessionId', requireSectionApi('behavioral'), async (req, res) => {
+  const sessionId = String(req.params.sessionId).slice(0, 64);
+  try {
+    const [rows] = await dbPool.query(
+      "SELECT payload FROM events WHERE type = 'activity' AND session_id = ? ORDER BY id ASC",
+      [sessionId]
+    );
+    let moves = [];
+    let clicks = [];
+    rows.forEach((r) => {
+      const p = r.payload || {};
+      if (Array.isArray(p.mouseMoves)) moves = moves.concat(p.mouseMoves);
+      if (Array.isArray(p.mouseClicks)) clicks = clicks.concat(p.mouseClicks);
+    });
+    moves.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+    clicks.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+    res.json({ moves, clicks });
+  } catch (err) {
+    console.error('[GET /api/behavioral/session-mouse/:sessionId] error:', err.message);
     res.status(500).json({ error: 'database error' });
   }
 });
