@@ -43,7 +43,6 @@ on failure (a JSON 401/403 vs. a redirect to `/login.html`).
   Node, which now owns serving every page and can redirect to `/login.html`
   before a byte of protected content is ever sent.
 
-
 ### Dashboard
 
 Three metrics, three different presentations (the assignment's minimum:
@@ -261,3 +260,56 @@ re-plotted:
    load time trace back to their hardware," not to be eyeballed against
    a separate table.
 
+### Combining the tab-hide beacon (one request instead of two)
+
+On tab-hide, `collector.js` fired two separate `sendBeacon` calls back to
+back: `flushActivity()` (the final batch of mouse/click/scroll/key/idle/
+error data) then `send('exit', {})`. Both represent the exact same
+moment - there is no reason for two network requests when one carries
+both.
+
+Decision: refactor `send(type, data)` into three pieces - `buildPayload`
+(builds the envelope, fires the `collector:sent` debug event), `transmit`
+(does the actual `sendBeacon`/`fetch` call, now accepting either one
+payload object or an array of them), and a new `sendBatch(events)` that
+maps an array of `{type, data}` through `buildPayload` and calls
+`transmit` once. `flushActivity()`'s batching logic was split out into
+`collectActivity()` (returns the pending data and clears the buffers, or
+`null` if there's nothing to report) so the tab-hide handler can grab
+that data without immediately sending it. The handler now builds
+`[{type:'activity', data}, {type:'exit', data:{}}]` (omitting the
+activity entry when nothing was buffered) and sends it as one
+`sendBatch()` call. Every other call site (`enter`, `load`, the periodic
+10s activity flush, `track()`) is untouched - `send()` still sends a
+single object exactly as before.
+
+The backend (`hw2/nodejs/server.js`, `POST /collect`) had to accept the
+new array shape without breaking the existing single-object shape every
+other call site still uses. `req.body` is normalized to an array up
+front (`Array.isArray(req.body) ? req.body : [req.body]`), capped at 10
+events per batch (the size check is done once across the whole batch,
+not per-event, since it's still one wire transmission), and the
+`visitors` upsert runs once per request instead of once per event, since
+every event in one beacon shares the same IP. Critically, the final
+activity flush stays labeled `type: 'activity'` in its own DB row rather
+than getting folded into the `exit` row - several aggregate queries
+(`top-sessions`, `page-visits`, `project-time-spent`'s next-event
+detection, `computePageBreakdown`) filter on `WHERE type = 'activity'`
+specifically, so merging the transport had to leave the data model
+untouched.
+
+Verified live: a single batched POST to `/collect` produced two distinct
+rows in the `events` table (`activity` then `exit`, same session/IP,
+sequential ids) - confirmed directly against the database, not just the
+204 response. Single-object POSTs (the unchanged path) were re-tested
+after the change and still insert normally.
+
+**Known tradeoff, not yet addressed:** the batch insert is a plain loop
+of individual `INSERT`s inside one `try`/`catch`, not a transaction. If
+the DB errors partway through a batch, the `catch` falls back to writing
+every payload in that batch to the JSONL fallback file - including any
+that already committed to MySQL before the error. A rare DB hiccup
+mid-batch could therefore duplicate an event across both the database
+and the fallback file. Documented here rather than silently left
+unmentioned, since the assignment's design-decision sections are meant
+to be precise about what was and wasn't fully solved.
