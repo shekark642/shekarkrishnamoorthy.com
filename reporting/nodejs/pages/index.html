@@ -9,7 +9,7 @@
 <style>
   body { font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif; background: #f8fafc; color: #0f172a; margin: 0; padding: 2rem 1.5rem 4rem; overflow-x: hidden; }
   main { max-width: 980px; margin: 0 auto; }
-  #recentWrap, #sessionsWrap, #flaggedWrap { overflow-x: auto; }
+  #sessionsWrap, #distinctUsersWrap, #flaggedWrap { overflow-x: auto; }
   header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 0.8rem; }
   header h1 { font-size: 1.35rem; margin: 0 0 0.2rem; }
   header p { margin: 0; color: #64748b; font-size: 0.85rem; }
@@ -60,6 +60,7 @@
     </div>
     <nav>
       <a href="/music.html">Music Site Metrics</a>
+      <a href="/about-me.html">About Me Metrics</a>
       <a href="/reports.html">Saved Reports</a>
       <a href="#" id="adminLink" style="display:none">User Management</a>
       <a href="#" id="logoutLink">Log out</a>
@@ -80,22 +81,23 @@
   </div>
 
   <div class="card">
-    <h2>Recent Activity (behavioral)</h2>
-    <div id="recentWrap">
+    <h2>Sessions (behavioral)</h2>
+    <p style="margin:-0.4rem 0 0.9rem;color:#64748b;font-size:0.82rem">Who and when - every session's scattered behavioral events (enter/activity/exit/submit_click) cross-referenced into one row per visitor.</p>
+    <div id="sessionsWrap">
       <table>
-        <thead><tr><th>Type</th><th>Session</th><th>URL</th><th>Server Time</th></tr></thead>
-        <tbody id="recentRows"></tbody>
+        <thead><tr><th>Session</th><th>User (IP)</th><th>First Seen</th><th>Last Seen</th></tr></thead>
+        <tbody id="sessionRows"></tbody>
       </table>
     </div>
   </div>
 
   <div class="card">
-    <h2>Sessions (behavioral)</h2>
-    <p style="margin:-0.4rem 0 0.9rem;color:#64748b;font-size:0.82rem">Every session's scattered behavioral events (enter/activity/exit/submit_click) cross-referenced into one row per visitor.</p>
-    <div id="sessionsWrap">
+    <h2>Distinct Users (behavioral)</h2>
+    <p style="margin:-0.4rem 0 0.9rem;color:#64748b;font-size:0.82rem">Unique visitors by IP address (the only durable identity available for anonymous visitors), and how many sessions each has generated. IPs older than the retention window are anonymized and excluded.</p>
+    <div id="distinctUsersWrap">
       <table>
-        <thead><tr><th>Session</th><th>First Seen</th><th>Last Seen</th><th>Duration</th><th>Pages</th><th>Submitted?</th></tr></thead>
-        <tbody id="sessionRows"></tbody>
+        <thead><tr><th>User (IP)</th><th>Sessions</th><th>First Seen</th><th>Last Seen</th></tr></thead>
+        <tbody id="distinctUserRows"></tbody>
       </table>
     </div>
   </div>
@@ -104,12 +106,6 @@
     <h2>Top 5 Most Recent Sessions (behavioral)</h2>
     <p style="margin:-0.4rem 0 0.9rem;color:#64748b;font-size:0.82rem">Device, activity totals, exit page (where they were when the session ended), and a mouse-movement replay for each.</p>
     <div class="session-grid" id="recentSessionGrid"></div>
-  </div>
-
-  <div class="card">
-    <h2>Top 5 Sessions by Total Time on Site (behavioral)</h2>
-    <p style="margin:-0.4rem 0 0.9rem;color:#64748b;font-size:0.82rem">Same detail, ranked by duration instead of recency.</p>
-    <div class="session-grid" id="topTimeSessionGrid"></div>
   </div>
 
   <div class="card" id="flaggedCard" style="display:none">
@@ -240,30 +236,40 @@
     });
   }, function () { noAccess("loadTimeChartWrap", "performance"); });
 
-  // --- Recent Activity (grid - individual record inspection) ---
-  fetchScoped("/api/behavioral/events?limit=15", function (rows) {
-    document.getElementById("recentRows").innerHTML = rows.map(function (r) {
-      return "<tr><td>" + r.type + "</td><td class='mono'>" + (r.session_id || "") + "</td>" +
-        "<td class='mono'>" + (r.url || "") + "</td><td class='mono'>" + (r.server_timestamp || "") + "</td></tr>";
-    }).join("");
-  }, function () { noAccess("recentWrap", "behavioral"); });
-
   // --- Sessions (cross-referenced - one row per session, not per event) ---
   function fmtDuration(secs) {
     if (secs === null || secs === undefined) return "—";
     if (secs < 60) return secs + "s";
     return Math.floor(secs / 60) + "m " + (secs % 60) + "s";
   }
+  // Plain, human-readable date/time (e.g. "Sep 6, 8:59 PM") instead of a
+  // raw ISO/SQL timestamp string - this dashboard is a quick-glance view,
+  // not a report that needs full precision.
+  function fmtDateTime(s) {
+    if (!s) return "—";
+    var d = new Date(s);
+    if (isNaN(d.getTime())) return "—";
+    return d.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+  }
   fetchScoped("/api/behavioral/sessions?limit=20", function (rows) {
     document.getElementById("sessionRows").innerHTML = rows.map(function (r) {
       return "<tr><td class='mono'>" + r.session_id.slice(0, 12) + "</td>" +
-        "<td class='mono'>" + (r.firstSeen || "") + "</td>" +
-        "<td class='mono'>" + (r.lastSeen || "") + "</td>" +
-        "<td>" + fmtDuration(r.durationSecs) + "</td>" +
-        "<td>" + r.pagesVisited + "</td>" +
-        "<td>" + (r.submitted ? "✅" : "—") + "</td></tr>";
+        "<td class='mono'>" + esc(r.ip || "—") + "</td>" +
+        "<td class='mono'>" + fmtDateTime(r.firstSeen) + "</td>" +
+        "<td class='mono'>" + fmtDateTime(r.lastSeen) + "</td></tr>";
     }).join("");
   }, function () { noAccess("sessionsWrap", "behavioral"); });
+
+  // --- Distinct Users (IP-based identity proxy, sessions per user) ---
+  fetchScoped("/api/behavioral/distinct-users?limit=20", function (rows) {
+    document.getElementById("distinctUserRows").innerHTML = rows.length
+      ? rows.map(function (r) {
+          return "<tr><td class='mono'>" + esc(r.ip) + "</td><td>" + r.sessionCount + "</td>" +
+            "<td class='mono'>" + fmtDateTime(r.firstSeen) + "</td>" +
+            "<td class='mono'>" + fmtDateTime(r.lastSeen) + "</td></tr>";
+        }).join("")
+      : "<tr><td colspan='4' class='no-access'>No users with a live (non-anonymized) IP yet.</td></tr>";
+  }, function () { noAccess("distinctUsersWrap", "behavioral"); });
 
   // --- Top 5 session groups (mini cards with device/activity detail + a
   // mouse-movement replay button per card) ---
@@ -283,6 +289,7 @@
     return '<div class="session-card">' +
       '<h3>#' + rank + ' · ' + esc(r.session_id.slice(0, 14)) + '</h3>' +
       '<table class="kv">' +
+        '<tr><td>IP</td><td>' + esc(r.ip || "—") + '</td></tr>' +
         '<tr><td>Duration</td><td>' + fmtDuration(r.durationSecs) + '</td></tr>' +
         '<tr><td>Pages visited</td><td>' + r.pagesVisited + '</td></tr>' +
         '<tr><td>Events</td><td>' + r.eventCount + '</td></tr>' +
@@ -402,21 +409,22 @@
       : '<p class="no-access">No sessions yet.</p>';
   }, function () { noAccess("recentSessionGrid", "behavioral"); });
 
-  fetchScoped("/api/behavioral/top-sessions?sortBy=duration&limit=5", function (rows) {
-    document.getElementById("topTimeSessionGrid").innerHTML = rows.length
-      ? rows.map(function (r, idx) { return sessionCardHtml(r, idx + 1); }).join("")
-      : '<p class="no-access">No sessions yet.</p>';
-  }, function () { noAccess("topTimeSessionGrid", "behavioral"); });
-
-  // --- Visitor Type (pie chart - bot vs human, one slice each) ---
+  // --- Visitor Type (pie chart - bot vs human vs unclassified) ---
+  // Unclassified = sessions with no 'load' event ever recorded (usually a
+  // fast bounce - they left before the page's load event, and the async
+  // image-detection check it waits on, could complete). There's no
+  // staticData payload for those sessions, so no bot/human signal exists -
+  // shown honestly as its own slice instead of guessing "human" by default.
+  // This keeps the pie chart's total matching the "Unique Sessions" stat
+  // above instead of silently undercounting it.
   fetchScoped("/api/behavioral/visitor-types", function (data) {
     new Chart(document.getElementById("visitorTypeChart"), {
       type: "pie",
       data: {
-        labels: ["Human", "Bot"],
+        labels: ["Human", "Bot", "Unclassified"],
         datasets: [{
-          data: [data.human, data.bot],
-          backgroundColor: ["#0284c7", "#db2777"]
+          data: [data.human, data.bot, data.unclassified],
+          backgroundColor: ["#0284c7", "#db2777", "#94a3b8"]
         }]
       },
       options: { responsive: true, plugins: { legend: { position: "bottom" } } }

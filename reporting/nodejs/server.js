@@ -676,6 +676,10 @@ app.get('/api/behavioral/events', requireSectionApi('behavioral'), async (req, r
 // one row per session. Deliberately built only from behavioral-type rows
 // (excludes 'load'), so a behavioral-only analyst can't infer performance
 // signal (e.g. whether/when a load event happened) through this view.
+// Condensed to just identity + timing (session, ip, firstSeen, lastSeen) -
+// duration/pages/submitted are already covered in depth by the top-sessions
+// cards, so this card is the quick-glance "who and when" list, not a
+// duplicate of them.
 app.get('/api/behavioral/sessions', requireSectionApi('behavioral'), async (req, res) => {
   const where = ["type != 'load'", 'session_id IS NOT NULL'];
   const params = [];
@@ -688,15 +692,9 @@ app.get('/api/behavioral/sessions', requireSectionApi('behavioral'), async (req,
     const [rows] = await dbPool.query(
       `SELECT
          session_id,
+         SUBSTRING_INDEX(GROUP_CONCAT(ip ORDER BY id DESC SEPARATOR '||'), '||', 1) AS ip,
          MIN(COALESCE(client_timestamp, server_timestamp)) AS firstSeen,
-         MAX(COALESCE(client_timestamp, server_timestamp)) AS lastSeen,
-         TIMESTAMPDIFF(SECOND,
-           MIN(COALESCE(client_timestamp, server_timestamp)),
-           MAX(COALESCE(client_timestamp, server_timestamp))) AS durationSecs,
-         COUNT(*) AS eventCount,
-         COUNT(DISTINCT url) AS pagesVisited,
-         SUBSTRING_INDEX(GROUP_CONCAT(url ORDER BY id DESC SEPARATOR '||'), '||', 1) AS lastUrl,
-         MAX(CASE WHEN type = 'submit_click' THEN 1 ELSE 0 END) = 1 AS submitted
+         MAX(COALESCE(client_timestamp, server_timestamp)) AS lastSeen
        FROM events
        ${whereSql}
        GROUP BY session_id
@@ -711,6 +709,38 @@ app.get('/api/behavioral/sessions', requireSectionApi('behavioral'), async (req,
   }
 });
 
+// GET /api/behavioral/distinct-users - unique visitors cross-referenced
+// against how many sessions they've generated. There's no login-based
+// identity for anonymous site visitors, so IP address is the only durable
+// proxy available - grouping by session_id alone would just report the
+// session count back at itself. Two caveats this can't get around: IPs
+// older than the retention window are anonymized to NULL by
+// anonymizeOldIps() and are excluded here (nothing left to group them by),
+// and NAT/dynamic IPs mean this over- or under-counts "real" unique people
+// at the margins - it's the best available signal, not a guarantee.
+app.get('/api/behavioral/distinct-users', requireSectionApi('behavioral'), async (req, res) => {
+  const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 500);
+  try {
+    const [rows] = await dbPool.query(
+      `SELECT
+         ip,
+         COUNT(DISTINCT session_id) AS sessionCount,
+         MIN(COALESCE(client_timestamp, server_timestamp)) AS firstSeen,
+         MAX(COALESCE(client_timestamp, server_timestamp)) AS lastSeen
+       FROM events
+       WHERE ip IS NOT NULL AND session_id IS NOT NULL
+       GROUP BY ip
+       ORDER BY sessionCount DESC, lastSeen DESC
+       LIMIT ?`,
+      [limit]
+    );
+    res.json(rows);
+  } catch (err) {
+    console.error('[GET /api/behavioral/distinct-users] error:', err.message);
+    res.status(500).json({ error: 'database error' });
+  }
+});
+
 // GET /api/behavioral/visitor-types - bot vs. human, one classification per
 // session (not per event). is_bot is a generated column on `events`,
 // computed straight from each 'load' event's own JSON payload - true if
@@ -721,20 +751,38 @@ app.get('/api/behavioral/sessions', requireSectionApi('behavioral'), async (req,
 // whole session a bot. This is a heuristic, not a guarantee - a bot that
 // spoofs a normal browser UA and clears navigator.webdriver evades both
 // signals, same limitation every client-side bot detector has.
+//
+// Grouped over ALL of a session's events, not just its 'load' ones - is_bot
+// is a generated column that's NULL for every non-'load' row (see the
+// column definition), so MAX() over the whole session reduces to exactly
+// its load-event value when one exists. What this buys: a session that
+// bounced before the page's load event (plus the async image-detection
+// check it waits on) ever completed has no load event at all, and
+// therefore no signal to classify it by - MAX() over an all-NULL group is
+// NULL, which surfaces as "unclassified" below instead of being silently
+// dropped or defaulted to human. Without this, the pie chart's total
+// undercounts the dashboard's "Unique Sessions" stat (which counts any
+// session with a non-load event) by exactly however many sessions bounced
+// that fast - a real, observed gap, not a rounding artifact.
 app.get('/api/behavioral/visitor-types', requireSectionApi('behavioral'), async (req, res) => {
   try {
     const [[row]] = await dbPool.query(`
       SELECT
         SUM(sessionIsBot = 1) AS botSessions,
-        SUM(sessionIsBot = 0) AS humanSessions
+        SUM(sessionIsBot = 0) AS humanSessions,
+        SUM(sessionIsBot IS NULL) AS unclassifiedSessions
       FROM (
         SELECT session_id, MAX(is_bot) AS sessionIsBot
         FROM events
-        WHERE type = 'load' AND session_id IS NOT NULL
+        WHERE session_id IS NOT NULL
         GROUP BY session_id
       ) t
     `);
-    res.json({ bot: Number(row.botSessions) || 0, human: Number(row.humanSessions) || 0 });
+    res.json({
+      bot: Number(row.botSessions) || 0,
+      human: Number(row.humanSessions) || 0,
+      unclassified: Number(row.unclassifiedSessions) || 0
+    });
   } catch (err) {
     console.error('[GET /api/behavioral/visitor-types] error:', err.message);
     res.status(500).json({ error: 'database error' });
@@ -770,6 +818,7 @@ app.get('/api/behavioral/top-sessions', requireSectionApi('behavioral'), async (
          COUNT(*) AS eventCount,
          COUNT(DISTINCT url) AS pagesVisited,
          SUBSTRING_INDEX(GROUP_CONCAT(url ORDER BY id DESC SEPARATOR '||'), '||', 1) AS exitUrl,
+         SUBSTRING_INDEX(GROUP_CONCAT(ip ORDER BY id DESC SEPARATOR '||'), '||', 1) AS ip,
          MAX(CASE WHEN type = 'submit_click' THEN 1 ELSE 0 END) = 1 AS submitted
        FROM events
        WHERE type != 'load' AND session_id IS NOT NULL
@@ -850,10 +899,19 @@ app.get('/api/behavioral/top-sessions', requireSectionApi('behavioral'), async (
 // for a database-side array-concatenation trick for this data size.
 app.get('/api/behavioral/session-mouse/:sessionId', requireSectionApi('behavioral'), async (req, res) => {
   const sessionId = String(req.params.sessionId).slice(0, 64);
+  // Optional ?url= scopes the replay to activity flushes recorded on that
+  // one page - each 'activity' row already carries its own url column
+  // (whichever page it was flushed from), so this is a plain equality
+  // filter, not the block/gap reconstruction pageTime needs. Lets a
+  // multi-page session (e.g. Home -> About Me -> Home) replay just the
+  // portion spent on one specific page instead of the whole session.
+  const pageUrl = typeof req.query.url === 'string' ? req.query.url : null;
   try {
     const [rows] = await dbPool.query(
-      "SELECT payload FROM events WHERE type = 'activity' AND session_id = ? ORDER BY id ASC",
-      [sessionId]
+      pageUrl
+        ? "SELECT payload FROM events WHERE type = 'activity' AND session_id = ? AND url = ? ORDER BY id ASC"
+        : "SELECT payload FROM events WHERE type = 'activity' AND session_id = ? ORDER BY id ASC",
+      pageUrl ? [sessionId, pageUrl] : [sessionId]
     );
     let moves = [];
     let clicks = [];
@@ -1115,6 +1173,84 @@ app.get('/api/behavioral/site-sessions', requireSectionApi('behavioral'), async 
     })));
   } catch (err) {
     console.error('[GET /api/behavioral/site-sessions] error:', err.message);
+    res.status(500).json({ error: 'database error' });
+  }
+});
+
+// GET /api/behavioral/page-visits?url=&minSeconds=&limit= - sessions that
+// visited one specific page, with the time spent on JUST that page (not
+// the whole session). Different from site-sessions above: a page like
+// About Me shares its origin (and therefore session id, since
+// sessionStorage is per-origin) with the rest of the main site, so a
+// session visiting it could easily have spent most of its time elsewhere
+// - "time on this site" would be the wrong number to report. Reuses the
+// same block/gap reconstruction as computePageBreakdown, then reports
+// just the one page's total instead of every page's.
+//
+// Click counts here are a plain WHERE url = ? filter, not the
+// reconstruction - each 'activity' row already carries its own url
+// column (whichever page it was flushed from).
+app.get('/api/behavioral/page-visits', requireSectionApi('behavioral'), async (req, res) => {
+  const pageUrl = typeof req.query.url === 'string' ? req.query.url : '';
+  if (!pageUrl) return res.status(400).json({ error: 'url is required' });
+  const normalizedTarget = normalizePageUrl(pageUrl);
+  const minSeconds = Math.max(parseInt(req.query.minSeconds, 10) || 0, 0);
+  const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 500);
+
+  try {
+    const [sessionIdRows] = await dbPool.query(
+      'SELECT DISTINCT session_id FROM events WHERE url = ? AND session_id IS NOT NULL',
+      [pageUrl]
+    );
+    if (!sessionIdRows.length) return res.json([]);
+    const ids = sessionIdRows.map((r) => r.session_id);
+    const placeholders = ids.map(() => '?').join(',');
+
+    // Full session context is needed here (not just this page's own rows) -
+    // a block's dwell time depends on when the NEXT block (possibly a
+    // different page) starts.
+    const [eventRows] = await dbPool.query(
+      `SELECT session_id, url, COALESCE(client_timestamp, server_timestamp) AS ts
+       FROM events
+       WHERE type != 'load' AND session_id IN (${placeholders})
+       ORDER BY session_id, id ASC`,
+      ids
+    );
+    const eventsBySession = {};
+    eventRows.forEach((r) => { (eventsBySession[r.session_id] = eventsBySession[r.session_id] || []).push(r); });
+
+    const [activityRows] = await dbPool.query(
+      `SELECT session_id, payload
+       FROM events
+       WHERE type = 'activity' AND url = ? AND session_id IN (${placeholders})`,
+      [pageUrl, ...ids]
+    );
+    const clicksBySession = {};
+    activityRows.forEach((r) => {
+      const clicks = (r.payload || {}).mouseClicks;
+      if (!Array.isArray(clicks)) return;
+      const c = clicksBySession[r.session_id] || { total: 0, useful: 0 };
+      clicks.forEach((click) => { c.total++; if (click.useful) c.useful++; });
+      clicksBySession[r.session_id] = c;
+    });
+
+    const results = ids.map((sessionId) => {
+      const pageTime = computePageBreakdown(eventsBySession[sessionId] || []);
+      const durationOnPage = pageTime[normalizedTarget] || 0;
+      const clicks = clicksBySession[sessionId] || { total: 0, useful: 0 };
+      return {
+        session_id: sessionId,
+        durationOnPageSecs: Math.round(durationOnPage),
+        totalClicks: clicks.total,
+        usefulClicks: clicks.useful
+      };
+    }).filter((r) => r.durationOnPageSecs >= minSeconds)
+      .sort((a, b) => b.durationOnPageSecs - a.durationOnPageSecs)
+      .slice(0, limit);
+
+    res.json(results);
+  } catch (err) {
+    console.error('[GET /api/behavioral/page-visits] error:', err.message);
     res.status(500).json({ error: 'database error' });
   }
 });
@@ -1580,6 +1716,10 @@ app.get('/performance.html', requireRolePage('super_admin', 'analyst'), (req, re
 
 app.get('/music.html', requireRolePage('super_admin', 'analyst'), (req, res) => {
   res.sendFile(path.join(PAGES_DIR, 'music.html'));
+});
+
+app.get('/about-me.html', requireRolePage('super_admin', 'analyst'), (req, res) => {
+  res.sendFile(path.join(PAGES_DIR, 'about-me.html'));
 });
 
 // Reachable by all three roles: it's the viewer's only page, but analysts

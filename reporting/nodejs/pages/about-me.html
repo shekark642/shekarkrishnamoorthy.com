@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>About Me Page Metrics — Analytics</title>
+<link rel="icon" type="image/svg+xml" href="https://shekarkrishnamoorthy.com/favicon.svg">
+<style>
+  body { font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif; background: #f8fafc; color: #0f172a; margin: 0; padding: 2rem 1.5rem 4rem; overflow-x: hidden; }
+  main { max-width: 1000px; margin: 0 auto; }
+  header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 0.8rem; }
+  header h1 { font-size: 1.35rem; margin: 0 0 0.2rem; }
+  header p { margin: 0; color: #64748b; font-size: 0.85rem; }
+  nav a { color: #0284c7; text-decoration: none; font-size: 0.88rem; margin-left: 1.1rem; font-weight: 600; }
+
+  .card { background: #fff; border: 1px solid #dbe3ee; border-radius: 16px; padding: 1.5rem 1.75rem; margin-bottom: 1.5rem; }
+  .card h2 { font-size: 1rem; margin: 0 0 0.9rem; }
+  .empty, .no-access { color: #94a3b8; font-size: 0.85rem; font-style: italic; }
+
+  .filter-row { display: flex; align-items: flex-end; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.2rem; }
+  .filter-row label { display: block; font-size: 0.78rem; font-weight: 600; color: #334155; margin-bottom: 0.3rem; }
+  .filter-row input[type="number"] { width: 140px; padding: 0.5rem 0.7rem; border: 1px solid #dbe3ee; border-radius: 7px; font-size: 0.88rem; }
+  .btn { border: none; border-radius: 8px; padding: 0.6rem 1.2rem; background: #0284c7; color: #fff; font-weight: 600; font-size: 0.88rem; cursor: pointer; }
+  .btn:hover { background: #0369a1; }
+  .filter-count { color: #64748b; font-size: 0.82rem; margin-left: auto; }
+
+  .visit-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; }
+  .visit-card { border: 1px solid #dbe3ee; border-radius: 12px; padding: 0.9rem 1rem; background: #fbfdff; }
+  .visit-card h3 { margin: 0 0 0.5rem; font-size: 0.85rem; font-family: ui-monospace, Consolas, monospace; }
+  .visit-card table.kv { font-size: 0.78rem; width: 100%; }
+  .visit-card table.kv td { padding: 0.2rem 0.3rem; border-bottom: none; }
+  .visit-card table.kv td:first-child { color: #64748b; }
+  .visit-card table.kv td:last-child { text-align: right; font-family: ui-monospace, Consolas, monospace; }
+  .btn-replay { width: 100%; margin-top: 0.6rem; border: 1px solid #0284c7; background: #eff6ff; color: #0284c7; border-radius: 7px; padding: 0.4rem; font-size: 0.78rem; font-weight: 600; cursor: pointer; }
+  .btn-replay:hover { background: #dbeafe; }
+  .replay-canvas { display: none; width: 100%; height: 160px; margin-top: 0.6rem; border: 1px solid #dbe3ee; border-radius: 8px; background: #f8fafc; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div>
+      <h1>About Me Page Metrics</h1>
+      <p>Time spent and mouse activity specifically on the About Me page - not the whole visitor session.</p>
+    </div>
+    <nav>
+      <a href="/index.html">&larr; Dashboard</a>
+      <a href="/reports.html">Saved Reports</a>
+      <a href="#" id="adminLink" style="display:none">User Management</a>
+      <a href="#" id="logoutLink">Log out</a>
+    </nav>
+  </header>
+
+  <div class="card">
+    <h2>Visits</h2>
+    <div class="filter-row">
+      <div>
+        <label for="minSeconds">Min. time on page (seconds)</label>
+        <input type="number" id="minSeconds" min="0" value="0" placeholder="e.g. 15">
+      </div>
+      <button class="btn" id="applyBtn">Apply Filter</button>
+      <span class="filter-count" id="filterCount"></span>
+    </div>
+    <div id="gridWrap"><p class="empty">Loading...</p></div>
+  </div>
+</main>
+
+<script>
+(function () {
+  "use strict";
+  var PAGE_URL = "https://shekarkrishnamoorthy.com/members/shekarkrishnamoorthy.html";
+
+  function esc(s) { return String(s).replace(/</g, "&lt;"); }
+  function fmtDuration(secs) {
+    if (secs === null || secs === undefined) return "—";
+    if (secs < 60) return secs + "s";
+    return Math.floor(secs / 60) + "m " + (secs % 60) + "s";
+  }
+
+  fetch("/auth/me").then(function (r) { return r.json(); }).then(function (me) {
+    if (me.role === "super_admin") {
+      var link = document.getElementById("adminLink");
+      link.style.display = "inline";
+      link.href = "/users.html";
+    }
+  });
+
+  document.getElementById("logoutLink").addEventListener("click", function (e) {
+    e.preventDefault();
+    fetch("/auth/logout", { method: "POST" }).then(function () { window.location.href = "/logout.html"; });
+  });
+
+  // Same replay renderer as the dashboard's session cards - animates a
+  // time-merged, scaled move/click path over a fixed ~6s playback budget.
+  function playReplay(canvas, moves, clicks) {
+    var ctx = canvas.getContext("2d");
+    var W = canvas.width, H = canvas.height;
+    var xs = moves.map(function (m) { return m.x; }).concat(clicks.map(function (c) { return c.x; }));
+    var ys = moves.map(function (m) { return m.y; }).concat(clicks.map(function (c) { return c.y; }));
+    var maxX = Math.max(100, xs.reduce(function (a, b) { return Math.max(a, b); }, 0));
+    var maxY = Math.max(100, ys.reduce(function (a, b) { return Math.max(a, b); }, 0));
+    var scaleX = W / maxX, scaleY = H / maxY;
+    var events = moves.map(function (m) { return { x: m.x, y: m.y, t: m.timestamp, click: false }; })
+      .concat(clicks.map(function (c) { return { x: c.x, y: c.y, t: c.timestamp, click: true }; }))
+      .sort(function (a, b) { return new Date(a.t) - new Date(b.t); });
+    if (!events.length) { ctx.fillStyle = "#94a3b8"; ctx.font = "12px sans-serif"; ctx.fillText("No mouse activity recorded on this visit.", 10, 80); return; }
+
+    var stepMs = Math.max(8, Math.min(60, 6000 / events.length));
+    var trail = [];
+    var i = 0;
+    function frame() {
+      if (i >= events.length) return;
+      var e = events[i];
+      var x = e.x * scaleX, y = e.y * scaleY;
+      trail.push({ x: x, y: y });
+      if (trail.length > 30) trail.shift();
+
+      ctx.fillStyle = "#f8fafc";
+      ctx.fillRect(0, 0, W, H);
+      ctx.strokeStyle = "rgba(2,132,199,0.45)";
+      ctx.beginPath();
+      trail.forEach(function (p, idx) { idx === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y); });
+      ctx.stroke();
+
+      if (e.click) {
+        ctx.strokeStyle = "#db2777";
+        ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(x, y, 10, 0, Math.PI * 2); ctx.stroke();
+        ctx.lineWidth = 1;
+      }
+      ctx.fillStyle = "#0284c7";
+      ctx.beginPath(); ctx.arc(x, y, 4, 0, Math.PI * 2); ctx.fill();
+
+      i++;
+      setTimeout(function () { requestAnimationFrame(frame); }, stepMs);
+    }
+    frame();
+  }
+
+  document.addEventListener("click", function (e) {
+    var btn = e.target.closest && e.target.closest(".btn-replay");
+    if (!btn) return;
+    var canvas = btn.nextElementSibling;
+    canvas.style.display = "block";
+    btn.disabled = true;
+    btn.textContent = "Loading...";
+    fetch("/api/behavioral/session-mouse/" + encodeURIComponent(btn.dataset.session) + "?url=" + encodeURIComponent(PAGE_URL))
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        btn.disabled = false;
+        btn.textContent = "▶ Replay again";
+        playReplay(canvas, data.moves, data.clicks);
+      });
+  });
+
+  function visitCardHtml(r) {
+    return '<div class="visit-card">' +
+      '<h3>' + esc(r.session_id.slice(0, 14)) + '</h3>' +
+      '<table class="kv">' +
+        '<tr><td>Time on page</td><td>' + fmtDuration(r.durationOnPageSecs) + '</td></tr>' +
+        '<tr><td>Useful clicks</td><td>' + r.usefulClicks + '</td></tr>' +
+        '<tr><td>Total clicks</td><td>' + r.totalClicks + '</td></tr>' +
+      '</table>' +
+      '<button class="btn-replay" data-session="' + esc(r.session_id) + '">▶ Replay mouse activity</button>' +
+      '<canvas class="replay-canvas" width="400" height="160"></canvas>' +
+    '</div>';
+  }
+
+  function loadVisits() {
+    var minSeconds = Math.max(0, parseInt(document.getElementById("minSeconds").value, 10) || 0);
+    document.getElementById("gridWrap").innerHTML = '<p class="empty">Loading...</p>';
+    fetch("/api/behavioral/page-visits?url=" + encodeURIComponent(PAGE_URL) + "&minSeconds=" + minSeconds + "&limit=100")
+      .then(function (r) {
+        if (r.status === 403) { document.getElementById("gridWrap").innerHTML = '<p class="no-access">No access to the "behavioral" section.</p>'; return null; }
+        return r.json();
+      })
+      .then(function (rows) {
+        if (!rows) return;
+        document.getElementById("filterCount").textContent = rows.length + " visit" + (rows.length === 1 ? "" : "s");
+        document.getElementById("gridWrap").innerHTML = rows.length
+          ? '<div class="visit-grid">' + rows.map(visitCardHtml).join("") + '</div>'
+          : '<p class="empty">No visits match this filter.</p>';
+      });
+  }
+
+  document.getElementById("applyBtn").addEventListener("click", loadVisits);
+  document.getElementById("minSeconds").addEventListener("keydown", function (e) { if (e.key === "Enter") loadVisits(); });
+
+  loadVisits();
+})();
+</script>
+</body>
+</html>
