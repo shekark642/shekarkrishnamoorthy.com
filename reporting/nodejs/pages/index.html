@@ -148,7 +148,7 @@
     var ordered = rows.slice().reverse(); // oldest to newest, left to right
     var labels = ordered.map(function (r, i) { return "#" + (i + 1); });
     var values = ordered.map(function (r) {
-      return r.payload && r.payload.performanceData ? r.payload.performanceData.totalLoadTimeMs : null;
+      return r.total_load_time_ms;
     });
 
     new Chart(document.getElementById("loadTimeChart"), {

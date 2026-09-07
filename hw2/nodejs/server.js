@@ -4,6 +4,7 @@ const os = require('os');
 const fs = require('fs');
 const path = require('path');
 const mysql = require('mysql2/promise');
+const rateLimit = require('express-rate-limit');
 
 const app = express();
 
@@ -493,7 +494,23 @@ function broadcastLive(payload) {
   }
 }
 
-app.post('/collect', async (req, res) => {
+// A beacon flood (scripted or accidental) pollutes every aggregate the
+// reporting dashboard computes and grows the table forever, and /collect
+// has no auth to gate it - it must accept beacons from any origin's
+// browser. 60/min per IP is generous for real multi-tab use (collector.js
+// itself sends at most one 'enter', one 'load', an 'activity' flush every
+// 10s, and one 'exit' per page) while still capping a flood at a fixed,
+// small cost. sendBeacon can't read the response anyway, and collector.js's
+// fetch fallback already swallows failures, so a 429 here is silent and
+// safe on the client - no retry storm.
+const collectLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false
+});
+
+app.post('/collect', collectLimiter, async (req, res) => {
   const payload = req.body;
 
   if (!payload || typeof payload.url !== 'string' || typeof payload.type !== 'string') {

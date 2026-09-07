@@ -22,13 +22,74 @@ const dbPool = mysql.createPool({
   queueLimit: 0
 });
 
-// --- Sessions (HW4 auth) ---
+// --- Sessions ---
 //
-// In-memory, same durability tradeoff already used elsewhere in this project
-// (HW2's state-nodejs, the fingerprint demo) - fine for this assignment's
-// scope; a process restart logs everyone out, nothing more.
-const sessions = new Map(); // token -> { userId, username, isAdmin }
+// Backed by the `sessions` table in the same analytics DB, not an in-memory
+// Map: every `npm run deploy` restarts this process, and an in-memory store
+// silently logged out anyone currently using the dashboard on every single
+// deploy. A DB-backed token lookup is one indexed primary-key read - on a
+// local (127.0.0.1) connection pool this costs well under a millisecond,
+// not a meaningful bottleneck for a low-traffic reporting dashboard - and
+// survives restarts like everything else this table already backs.
 const SESSION_COOKIE = 'reporting_session';
+const SESSION_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
+async function createSession(user) {
+  const token = crypto.randomBytes(32).toString('hex');
+  const expiresAt = new Date(Date.now() + SESSION_MAX_AGE_MS);
+  await dbPool.execute(
+    'INSERT INTO sessions (token, user_id, username, is_admin, expires_at) VALUES (?, ?, ?, ?, ?)',
+    [token, user.id, user.username, user.is_admin ? 1 : 0, expiresAt]
+  );
+  return token;
+}
+
+async function getSession(token) {
+  if (!token) return null;
+  const [rows] = await dbPool.query(
+    'SELECT user_id AS userId, username, is_admin AS isAdmin FROM sessions WHERE token = ? AND expires_at > NOW()',
+    [token]
+  );
+  if (!rows.length) return null;
+  return { userId: rows[0].userId, username: rows[0].username, isAdmin: !!rows[0].isAdmin };
+}
+
+async function deleteSession(token) {
+  if (!token) return;
+  await dbPool.execute('DELETE FROM sessions WHERE token = ?', [token]);
+}
+
+// Expired rows are already excluded from getSession's WHERE clause, so this
+// sweep is just table hygiene (keeps it from growing forever), not a
+// correctness requirement - safe to run infrequently.
+setInterval(() => {
+  dbPool.execute('DELETE FROM sessions WHERE expires_at < NOW()').catch((err) => {
+    console.error('[session cleanup] error:', err.message);
+  });
+}, 60 * 60 * 1000);
+
+// --- IP retention ---
+//
+// events.ip has no legitimate long-term use beyond abuse investigation
+// shortly after the fact - every report/aggregate this dashboard computes
+// (totals, byGroup, sessions) reads type/url/timestamps/payload, never ip.
+// Keeping raw IPs indefinitely is pure liability with no analytical
+// upside, so anonymize (not delete - the event itself is still valid
+// analytics data) anything past a 90-day window, a common baseline
+// retention period for raw IPs. Runs once at startup and once a day after.
+const IP_RETENTION_DAYS = 90;
+function anonymizeOldIps() {
+  dbPool.execute(
+    'UPDATE events SET ip = NULL WHERE ip IS NOT NULL AND server_timestamp < NOW() - INTERVAL ? DAY',
+    [IP_RETENTION_DAYS]
+  ).then(([result]) => {
+    if (result.affectedRows) console.log(`[ip retention] anonymized ${result.affectedRows} row(s) older than ${IP_RETENTION_DAYS} days`);
+  }).catch((err) => {
+    console.error('[ip retention] error:', err.message);
+  });
+}
+anonymizeOldIps();
+setInterval(anonymizeOldIps, 24 * 60 * 60 * 1000);
 
 function parseCookies(header) {
   const out = {};
@@ -44,10 +105,18 @@ function parseCookies(header) {
 }
 
 // Attaches req.session (or null) on every request, before anything else runs.
-app.use((req, res, next) => {
+// A DB error here fails closed (session stays null, same as no cookie at
+// all) rather than crashing the request - an auth-store hiccup should mean
+// "logged out," never a 500 for every page on the site.
+app.use(async (req, res, next) => {
   const cookies = parseCookies(req.headers.cookie);
   const token = cookies[SESSION_COOKIE];
-  req.session = token && sessions.has(token) ? sessions.get(token) : null;
+  try {
+    req.session = await getSession(token);
+  } catch (err) {
+    console.error('[session lookup] error:', err.message);
+    req.session = null;
+  }
   next();
 });
 
@@ -94,14 +163,13 @@ app.post('/auth/login', async (req, res) => {
     const match = await bcrypt.compare(password, user.password_hash);
     if (!match) return res.status(401).json({ error: 'invalid username/email or password' });
 
-    const token = crypto.randomBytes(32).toString('hex');
-    sessions.set(token, { userId: user.id, username: user.username, isAdmin: !!user.is_admin });
+    const token = await createSession(user);
 
     res.cookie(SESSION_COOKIE, token, {
       httpOnly: true,
       secure: true,
       sameSite: 'Lax',
-      maxAge: 24 * 60 * 60 * 1000,
+      maxAge: SESSION_MAX_AGE_MS,
       path: '/'
     });
     res.json({ success: true, username: user.username, isAdmin: !!user.is_admin });
@@ -111,10 +179,14 @@ app.post('/auth/login', async (req, res) => {
   }
 });
 
-app.post('/auth/logout', (req, res) => {
+app.post('/auth/logout', async (req, res) => {
   const cookies = parseCookies(req.headers.cookie);
   const token = cookies[SESSION_COOKIE];
-  if (token) sessions.delete(token);
+  try {
+    await deleteSession(token);
+  } catch (err) {
+    console.error('[POST /auth/logout] error:', err.message);
+  }
   res.clearCookie(SESSION_COOKIE, { path: '/' });
   res.json({ success: true });
 });
@@ -196,9 +268,20 @@ app.get('/api/events', async (req, res) => {
   const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 100, 1), 1000);
   const offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
 
+  // The raw JSON payload is the heaviest column by far (activity rows carry
+  // full mouse-move/scroll/key arrays), and most callers only ever want the
+  // numbers already broken out into indexed generated columns. Default to
+  // those instead of the blob; a caller that genuinely needs the full
+  // payload for one row can still get it via /api/events/:id, or opt in
+  // here with ?includePayload=true.
+  const includePayload = req.query.includePayload === 'true';
+  const columns = 'id, session_id, type, url, ip, client_timestamp, server_timestamp, ' +
+    'total_load_time_ms, lcp_value, cls_value, inp_value' +
+    (includePayload ? ', payload' : '');
+
   try {
     const [rows] = await dbPool.query(
-      `SELECT id, session_id, type, url, ip, client_timestamp, server_timestamp, payload
+      `SELECT ${columns}
        FROM events ${where} ORDER BY id DESC LIMIT ? OFFSET ?`,
       [...params, limit, offset]
     );

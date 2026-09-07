@@ -155,7 +155,7 @@
 
   fetch("/api/events?type=load&limit=100").then(function (r) { return r.json(); }).then(function (rows) {
     var times = rows.map(function (r) {
-      return r.payload && r.payload.performanceData ? r.payload.performanceData.totalLoadTimeMs : null;
+      return r.total_load_time_ms;
     }).filter(function (v) { return typeof v === "number"; });
 
     // Histogram buckets - shows the shape of the distribution, which the
@@ -181,7 +181,7 @@
     });
 
     document.getElementById("loadRows").innerHTML = rows.map(function (r) {
-      var ms = r.payload && r.payload.performanceData ? r.payload.performanceData.totalLoadTimeMs : null;
+      var ms = r.total_load_time_ms;
       var s = scoreOf("loadTime", ms);
       return "<tr><td>" + (r.session_id || "") + "</td><td>" + (ms !== null ? ms + " ms" : "—") + "</td>" +
         "<td><span class='tag " + s + "'>" + scoreLabel(s) + "</span></td><td>" + (r.server_timestamp || "") + "</td></tr>";
