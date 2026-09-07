@@ -11,237 +11,27 @@
 <!-- HW3 custom analytics collector: static/performance/activity data -->
 <script src="https://collector.shekarkrishnamoorthy.com/collector.js" async></script>
 <style>
-  /* This page intentionally uses a different theme than the rest of the
-     site - overriding the shared design tokens from site-nav.css here
-     cascades automatically into every shared rule that reads var(...). */
-  :root {
-    --bg: #fff7ed;
-    --card: #ffffff;
-    --text: #1c1917;
-    --muted: #78716c;
-    --accent: #ea580c;
-    --accent2: #0d9488;
-    --border: #f1e4d4;
-  }
   main {
-    max-width: 760px;
+    max-width: 640px;
     margin: 0 auto;
     padding: 3rem 1.5rem 4rem;
   }
-
-  /* ---------- Intro ---------- */
-  .intro {
-    text-align: center;
-    margin-bottom: 2rem;
-  }
-  .avatar {
-    width: 110px;
-    height: 110px;
-    margin: 0 auto 1rem;
-    border-radius: 50%;
-    overflow: hidden;
-    border: 4px solid var(--card);
-    box-shadow: 0 6px 20px rgba(28,25,23,0.15);
-  }
-  .avatar svg { width: 100%; height: 100%; display: block; }
-  .intro h1 {
-    margin: 0 0 0.4rem;
+  main h1 {
     font-size: 2rem;
+    margin: 0 0 1.5rem;
   }
-  .typewriter {
-    display: inline-block;
-    font-size: 1.05rem;
-    color: var(--muted);
-    border-right: 2px solid var(--accent);
-    white-space: nowrap;
-    overflow: hidden;
-    padding-right: 4px;
-  }
-
-  section {
-    background: var(--card);
-    border: 1px solid var(--border);
-    border-radius: 14px;
-    padding: 1.5rem 1.75rem;
-    margin-top: 1.5rem;
-  }
-  section h2 {
-    margin-top: 0;
-    font-size: 1.15rem;
-  }
-
-  /* ---------- Tag cloud ---------- */
-  .tags {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.6rem;
-    padding: 0;
-    margin: 0;
-    list-style: none;
-  }
-  .tags button {
-    font: inherit;
-    cursor: pointer;
-    border: 1px solid var(--border);
-    border-radius: 999px;
-    padding: 0.45rem 1rem;
-    background: #fef3ec;
+  main p {
     color: var(--text);
-    transition: background 0.2s ease, transform 0.15s ease, color 0.2s ease;
-  }
-  .tags button:hover,
-  .tags button.picked {
-    background: var(--accent);
-    color: #fff;
-    transform: translateY(-2px);
-  }
-
-  /* ---------- Guessing game ---------- */
-  .game input[type="number"] {
-    font: inherit;
-    padding: 0.5rem 0.75rem;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    width: 100px;
-    margin-right: 0.5rem;
-  }
-  .game button {
-    font: inherit;
-    cursor: pointer;
-    border: none;
-    border-radius: 8px;
-    padding: 0.55rem 1rem;
-    background: var(--accent2);
-    color: #fff;
-    font-weight: 600;
-  }
-  .game p.result {
-    margin-top: 0.75rem;
-    min-height: 1.4rem;
-    font-weight: 600;
-    color: var(--accent2);
-  }
-
-  ul.facts {
-    padding-left: 1.2rem;
-    margin: 0;
-    line-height: 1.8;
-  }
-
-  footer {
-    text-align: center;
-    color: var(--muted);
-    font-size: 0.85rem;
-    margin-top: 2rem;
+    line-height: 1.7;
+    margin: 0 0 1.2rem;
   }
 </style>
 </head>
 <body>
 <main>
-
-  <div class="intro">
-    <!--
-      Avatar placeholder: swap the inline SVG below for a real photo once you have one:
-      <img src="/images/profile.jpg" alt="Shekar Krishnamoorthy" style="width:100%;height:100%;object-fit:cover;">
-    -->
-    <div class="avatar" aria-hidden="true">
-      <svg viewBox="0 0 110 110" role="img" aria-label="Placeholder avatar illustration">
-        <rect width="110" height="110" fill="#fed7aa"/>
-        <circle cx="55" cy="45" r="24" fill="#ea580c"/>
-        <path d="M15 110 c0 -30 20 -45 40 -45 s40 15 40 45 z" fill="#0d9488"/>
-      </svg>
-    </div>
-    <h1>Shekar Krishnamoorthy</h1>
-    <p class="typewriter" id="typewriter"></p>
-  </div>
-
-  <section aria-labelledby="about-heading">
-    <h2 id="about-heading">The short version</h2>
-    <ul class="facts">
-      <li>Right now I'm setting up shekarkrishnamoorthy.com from scratch — Apache on a DigitalOcean droplet, virtual hosts, the works.</li>
-      <li>I do most of my server work over SSH straight from VS Code — the terminal is basically home base.</li>
-      <li>I like projects where getting the small details right actually matters — a clean config, a page that validates, logs with no mystery 404s.</li>
-      <li>Still figuring out the rest of this section — check back as the site grows.</li>
-    </ul>
-  </section>
-
-  <section aria-labelledby="tags-heading">
-    <h2 id="tags-heading">Things I'm into</h2>
-    <p>Click a few — they'll stick.</p>
-    <ul class="tags" id="tagList">
-      <li><button type="button">Coding</button></li>
-      <li><button type="button">Coffee</button></li>
-      <li><button type="button">Music</button></li>
-      <li><button type="button">Hiking</button></li>
-      <li><button type="button">Gaming</button></li>
-      <li><button type="button">Reading</button></li>
-      <li><button type="button">Travel</button></li>
-      <!-- Edit this list freely — add or remove <li><button type="button">Tag</button></li> items -->
-    </ul>
-  </section>
-
-  <section class="game" aria-labelledby="game-heading">
-    <h2 id="game-heading">Guess my number</h2>
-    <p>I'm thinking of a number between 1 and 20. Give it a shot.</p>
-    <form id="guessForm">
-      <label for="guessInput">Your guess</label><br>
-      <input type="number" id="guessInput" name="guess" min="1" max="20" required>
-      <button type="submit">Guess</button>
-    </form>
-    <p class="result" id="guessResult" role="status"></p>
-  </section>
+  <h1>Shekar Krishnamoorthy</h1>
+  <p>Hello, my name is Shekar. I just graduated from the University of San Diego, California, with a B.S. in Data Science - specializing in machine learning and artificial intelligence. I've grown up in San Diego my whole life, and apart from software engineering, my skills include visual design. I am skilled at Python programming, and have experience with computer science theory as well as working with an LLM and other AI tools. I know a few different creation tools as well including FL studio and blender.</p>
+  <p>Apart from work, my hobbies include sports and music. Feel free to reach out regarding anything, I love to meet new people!</p>
 </main>
-
-<script>
-  (function () {
-    "use strict";
-
-    // Typewriter intro
-    var line = "Building this site, one config file at a time.";
-    var el = document.getElementById("typewriter");
-    var i = 0;
-    function typeNext() {
-      if (i <= line.length) {
-        el.textContent = line.slice(0, i);
-        i += 1;
-        setTimeout(typeNext, 45);
-      } else {
-        el.style.borderRight = "none";
-      }
-    }
-    typeNext();
-
-    // Tag cloud toggle
-    var tagList = document.getElementById("tagList");
-    tagList.addEventListener("click", function (event) {
-      var target = event.target;
-      if (target.tagName === "BUTTON") {
-        target.classList.toggle("picked");
-      }
-    });
-
-    // Guessing game
-    var secret = Math.floor(Math.random() * 20) + 1;
-    var attempts = 0;
-    var form = document.getElementById("guessForm");
-    var result = document.getElementById("guessResult");
-    var input = document.getElementById("guessInput");
-
-    form.addEventListener("submit", function (event) {
-      event.preventDefault();
-      var guess = Number(input.value);
-      attempts += 1;
-
-      if (guess === secret) {
-        result.textContent = "That's it! Got it in " + attempts + " guess" + (attempts === 1 ? "" : "es") + ". Refresh to play again.";
-      } else if (guess < secret) {
-        result.textContent = "Higher than " + guess + ". Try again.";
-      } else {
-        result.textContent = "Lower than " + guess + ". Try again.";
-      }
-    });
-  })();
-</script>
 </body>
 </html>
-
