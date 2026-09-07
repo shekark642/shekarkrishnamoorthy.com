@@ -19,7 +19,7 @@ if ($category !== '') {
     $url .= '&category=' . urlencode($category);
 }
 
-$context = stream_context_create(['http' => ['timeout' => 10]]);
+$context = stream_context_create(['http' => ['timeout' => 10, 'ignore_errors' => true]]);
 $response = @file_get_contents($url, false, $context);
 
 if ($response === false) {
