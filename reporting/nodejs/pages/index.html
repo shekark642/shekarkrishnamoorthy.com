@@ -26,6 +26,7 @@
   .card { background: #fff; border: 1px solid #dbe3ee; border-radius: 16px; padding: 1.5rem 1.75rem; margin-bottom: 1.5rem; }
   .card h2 { font-size: 1rem; margin: 0 0 0.9rem; }
   .card canvas { max-height: 260px; }
+  #siteComparisonWrap { height: 300px; }
   .no-access { color: #94a3b8; font-size: 0.85rem; font-style: italic; }
 
   table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
@@ -249,10 +250,18 @@
       document.getElementById("siteComparisonWrap").innerHTML = '<p class="no-access">No load-time data recorded yet.</p>';
       return;
     }
+    // Full hostnames ("test.shekarkrishnamoorthy.com") are long enough
+    // that, rotated under a short chart, their label area was crowding out
+    // the bars almost entirely - trimming the shared domain suffix keeps
+    // labels short regardless of how many sites get added later.
+    function shortHost(host) {
+      var trimmed = host.replace(/\.?shekarkrishnamoorthy\.com$/, "");
+      return trimmed || "main site";
+    }
     new Chart(document.getElementById("siteComparisonChart"), {
       type: "bar",
       data: {
-        labels: rows.map(function (r) { return r.host; }),
+        labels: rows.map(function (r) { return shortHost(r.host); }),
         datasets: [
           {
             label: "Actual (avg)",
@@ -268,6 +277,7 @@
       },
       options: {
         responsive: true,
+        maintainAspectRatio: false,
         plugins: { legend: { position: "bottom" } },
         scales: { y: { beginAtZero: true, title: { display: true, text: "ms" } } }
       }
