@@ -36,6 +36,7 @@
   }
 
   .project-thumb {
+    position: relative;
     aspect-ratio: 16 / 9;
     background: var(--bg);
     border-bottom: 1px solid var(--border);
@@ -50,6 +51,22 @@
     height: 100%;
     object-fit: cover;
     display: block;
+  }
+  .broken-badge {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    background: #dc2626;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1rem;
+    font-weight: 700;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
   }
 
   .project-info { padding: 0.9rem 1rem 1.1rem; }
@@ -129,7 +146,7 @@
     { title: "Analysis of Cardiovascular and Respiratory Health", year: 2025, coolness: 8, image: "https://shekark642.github.io/portfolio/projects/images/cardio_and_resp_analysis_ss.png", desc: "A data science course project: an interactive site that lets users compare themselves to similar athletes to set a baseline for improvement.", url: "https://shekark642.github.io/final106/" },
     { title: "Bikewatching in Boston", year: 2025, coolness: 9, image: "https://shekark642.github.io/portfolio/projects/images/bikewatching_project_ss.png", desc: "An interactive map analyzing bike lane and station traffic/flow across Boston at different times of day.", url: "https://shekark642.github.io/BostonBikeTraffic/" },
     { title: "ATP Sports Analytics Pipeline", year: 2025, coolness: 10, image: "https://shekark642.github.io/portfolio/projects/images/QNA_model_ss.png", desc: "A PyTorch model using historical match data and LLM-generated player tags to predict professional tennis match outcomes against bookmaker odds.", url: "https://colab.research.google.com/drive/1hOR4hbYbc6bKKdUQ08g_rUv6CZI9pTa5#scrollTo=1FROmf5Waz_Y" },
-    { title: "Top Headlines", year: 2026, coolness: 7, image: "", desc: "A live news reader pulling top headlines from NewsAPI, filterable by category and sortable by popularity or date.", url: "https://shekarkrishnamoorthy.com/important/news.html" },
+    { title: "Top Headlines", year: 2026, coolness: 7, image: "", broken: true, desc: "A live news reader pulling top headlines from NewsAPI, filterable by category and sortable by popularity or date.", url: "https://shekarkrishnamoorthy.com/important/news.html" },
     { title: "Project 6", year: 2021, coolness: 7, image: "", desc: "Description coming soon.", url: "#" },
     { title: "Project 7", year: 2020, coolness: 4, image: "", desc: "Description coming soon.", url: "#" },
     { title: "Project 8", year: 2019, coolness: 8, image: "", desc: "Description coming soon.", url: "#" },
@@ -144,7 +161,7 @@
     );
     grid.innerHTML = sorted.map(p => `
       <a class="project-card" href="${p.url}">
-        <div class="project-thumb">${p.image ? `<img src="${p.image}" alt="">` : "Image"}</div>
+        <div class="project-thumb">${p.image ? `<img src="${p.image}" alt="">` : "Image"}${p.broken ? `<span class="broken-badge" title="Currently broken">&#10005;</span>` : ""}</div>
         <div class="project-info">
           <h3>${p.title}</h3>
           <p class="project-year">${p.year || "TBD"}</p>

@@ -119,25 +119,3 @@ header.site-header nav a.active { color: #ffffff; border-bottom-color: var(--acc
 .page-intro { margin-bottom: 2rem; padding-left: 1rem; border-left: 4px solid var(--accent); }
 .page-intro h1 { margin: 0 0 0.4rem; font-size: 1.6rem; }
 .page-intro p { margin: 0; color: var(--muted); }
-
-/* Shared "site tour" prev/next navigation. */
-nav.page-nav {
-  display: flex;
-  justify-content: space-between;
-  gap: 1rem;
-  margin-top: 2.5rem;
-}
-
-nav.page-nav a {
-  flex: 1;
-  text-align: center;
-  text-decoration: none;
-  color: var(--text);
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 0.75rem 1rem;
-  transition: background 0.2s ease;
-}
-
-nav.page-nav a:hover { background: #eef2f7; }
