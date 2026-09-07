@@ -816,10 +816,24 @@ app.get('/api/behavioral/top-sessions', requireSectionApi('behavioral'), async (
     const activityBySession = {};
     activityRows.forEach((r) => { activityBySession[r.session_id] = r; });
 
+    // LogRocket's own product does full pixel-perfect session replay (DOM,
+    // network, console), far richer than the coordinate-path replay above -
+    // analytics.js sends its session URL through collector.track() as a
+    // logrocket_session event, so it just needs surfacing here.
+    const [logrocketRows] = await dbPool.query(
+      `SELECT session_id, JSON_UNQUOTE(JSON_EXTRACT(payload, '$.logrocketUrl')) AS url
+       FROM events
+       WHERE type = 'logrocket_session' AND session_id IN (${placeholders})`,
+      ids
+    );
+    const logrocketBySession = {};
+    logrocketRows.forEach((r) => { logrocketBySession[r.session_id] = r.url; });
+
     res.json(base.map((r) => ({
       ...r,
       device: deviceBySession[r.session_id] || null,
-      activity: activityBySession[r.session_id] || null
+      activity: activityBySession[r.session_id] || null,
+      logrocketUrl: logrocketBySession[r.session_id] || null
     })));
   } catch (err) {
     console.error('[GET /api/behavioral/top-sessions] error:', err.message);

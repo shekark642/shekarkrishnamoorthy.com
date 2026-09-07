@@ -36,7 +36,31 @@ _paq.push(['enableLinkTracking']);
   s.src = 'https://cdn.logr-in.com/LogRocket.min.js';
   s.crossOrigin = 'anonymous';
   s.onload = function () {
-    window.LogRocket && window.LogRocket.init('zwvdgp/shekarkrishnamoorthycom');
+    if (!window.LogRocket) return;
+    window.LogRocket.init('zwvdgp/shekarkrishnamoorthycom');
+
+    // LogRocket's own product is full pixel-perfect session replay (DOM,
+    // network, console - not just mouse coordinates), viewed in LogRocket's
+    // own player. getSessionURL hands back a direct link to that replay for
+    // this specific session; sending it through our own collector.track()
+    // means it lands in the same events table as everything else, so the
+    // reporting dashboard can link straight to it per session instead of
+    // needing a separate trip into LogRocket's own dashboard to find it.
+    window.LogRocket.getSessionURL(function (sessionURL) {
+      var attempts = 0;
+      (function trySend() {
+        // collector.js loads async alongside this script, so its readiness
+        // isn't guaranteed by the time this callback fires - retry briefly
+        // rather than silently dropping the event.
+        // Named logrocketUrl, not url - collector.track() merges this
+        // object's keys straight into the beacon payload, and `url` there
+        // already means "the page this event happened on" (see send() in
+        // collector.js). Reusing that key would silently overwrite it with
+        // the LogRocket link instead of the actual page URL.
+        if (window.collector) { window.collector.track('logrocket_session', { logrocketUrl: sessionURL }); return; }
+        if (attempts++ < 25) setTimeout(trySend, 200);
+      })();
+    });
   };
   document.head.appendChild(s);
 })();

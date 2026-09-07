@@ -303,6 +303,10 @@
       '<button class="btn-replay" data-session="' + esc(r.session_id) + '" ' +
         'data-w="' + (d.windowWidth || 1200) + '" data-h="' + (d.windowHeight || 800) + '">▶ Replay mouse activity</button>' +
       '<canvas class="replay-canvas" width="400" height="160"></canvas>' +
+      (r.logrocketUrl
+        ? '<a class="btn-replay" style="display:block;text-align:center;text-decoration:none;margin-top:0.4rem" ' +
+          'href="' + esc(r.logrocketUrl) + '" target="_blank" rel="noopener">🎥 Full LogRocket replay &#8599;</a>'
+        : '') +
     '</div>';
   }
 
