@@ -624,6 +624,64 @@ app.get('/api/performance/events', requireSectionApi('performance'), async (req,
   }
 });
 
+// GET /api/performance/site-comparison - actual average load time per
+// tracked site vs. an estimated "expected" load time for a basic
+// machine/connection, derived from how many sub-resources that site's
+// pages actually make the browser fetch (resourceCount, added to the
+// 'load' event's own payload in collector.js). Sites are discovered from
+// the url column itself, not a fixed list here - a newly tracked site (or
+// page) just starts appearing once it sends its first 'load' event, with
+// nothing to update in this file.
+//
+// The "expected" formula is a deliberately simple, fully transparent
+// estimate, not a network simulation: FIXED_OVERHEAD_MS covers DNS/TCP/TLS
+// handshake plus fetching and parsing the base HTML, before any
+// sub-resource loading even starts; PER_RESOURCE_MS is the added cost of
+// one more sub-resource under a modest connection with only partial
+// HTTP/2 multiplexing - queuing, connection reuse, and parse/eval
+// overhead per resource, not its raw serial fetch time (resources load
+// substantially in parallel, so this is intentionally much less than a
+// full round-trip per resource). Both constants are named and adjustable
+// right here - nothing about how "expected" is computed is hidden in the
+// query or the frontend.
+const SITE_COMPARISON_FIXED_OVERHEAD_MS = 400;
+const SITE_COMPARISON_PER_RESOURCE_MS = 40;
+
+// reporting.shekarkrishnamoorthy.com is deliberately excluded - tracking
+// was removed from the dashboard's own pages earlier ("I don't want to
+// see that showing up in the dashboard/tracking/logs"), so the handful of
+// 'load' rows still in the table from before that change (plus this
+// session's own manual testing) don't belong in a chart meant to compare
+// real tracked sites.
+app.get('/api/performance/site-comparison', requireSectionApi('performance'), async (req, res) => {
+  try {
+    const [rows] = await dbPool.query(`
+      SELECT
+        SUBSTRING_INDEX(SUBSTRING_INDEX(url, '//', -1), '/', 1) AS host,
+        COUNT(*) AS sampleSize,
+        AVG(total_load_time_ms) AS avgLoadTimeMs,
+        AVG(JSON_EXTRACT(payload, '$.performanceData.resourceCount')) AS avgResourceCount
+      FROM events
+      WHERE type = 'load' AND url IS NOT NULL
+        AND url NOT LIKE 'https://reporting.shekarkrishnamoorthy.com/%'
+      GROUP BY host
+      ORDER BY avgLoadTimeMs DESC
+    `);
+    res.json(rows.map((r) => ({
+      host: r.host,
+      sampleSize: r.sampleSize,
+      avgLoadTimeMs: r.avgLoadTimeMs,
+      avgResourceCount: r.avgResourceCount,
+      expectedLoadTimeMs: r.avgResourceCount === null
+        ? null
+        : SITE_COMPARISON_FIXED_OVERHEAD_MS + r.avgResourceCount * SITE_COMPARISON_PER_RESOURCE_MS
+    })));
+  } catch (err) {
+    console.error('[GET /api/performance/site-comparison] error:', err.message);
+    res.status(500).json({ error: 'database error' });
+  }
+});
+
 // GET /api/behavioral/summary - type breakdown + totals across everything
 // that isn't a page-load event.
 app.get('/api/behavioral/summary', requireSectionApi('behavioral'), async (req, res) => {

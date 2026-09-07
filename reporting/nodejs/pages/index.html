@@ -82,6 +82,12 @@
   </div>
 
   <div class="card">
+    <h2>Actual vs. Expected Load Time by Site</h2>
+    <p style="margin:-0.4rem 0 0.9rem;color:#64748b;font-size:0.82rem">Average real load time per tracked site, next to an estimated baseline for a basic machine/connection based on how many resources that site's pages actually fetch. Sites are discovered automatically - a newly tracked page just starts showing up here.</p>
+    <div id="siteComparisonWrap"><canvas id="siteComparisonChart"></canvas></div>
+  </div>
+
+  <div class="card">
     <h2>Sessions (behavioral)</h2>
     <p style="margin:-0.4rem 0 0.9rem;color:#64748b;font-size:0.82rem">Who and when - every session's scattered behavioral events (enter/activity/exit/submit_click) cross-referenced into one row per visitor.</p>
     <div id="sessionsWrap">
@@ -236,6 +242,37 @@
       }
     });
   }, function () { noAccess("loadTimeChartWrap", "performance"); });
+
+  // --- Actual vs. Expected Load Time by Site (comparison bar chart) ---
+  fetchScoped("/api/performance/site-comparison", function (rows) {
+    if (!rows.length) {
+      document.getElementById("siteComparisonWrap").innerHTML = '<p class="no-access">No load-time data recorded yet.</p>';
+      return;
+    }
+    new Chart(document.getElementById("siteComparisonChart"), {
+      type: "bar",
+      data: {
+        labels: rows.map(function (r) { return r.host; }),
+        datasets: [
+          {
+            label: "Actual (avg)",
+            data: rows.map(function (r) { return Math.round(r.avgLoadTimeMs); }),
+            backgroundColor: "#0284c7"
+          },
+          {
+            label: "Expected (basic machine baseline)",
+            data: rows.map(function (r) { return r.expectedLoadTimeMs === null ? null : Math.round(r.expectedLoadTimeMs); }),
+            backgroundColor: "#f59e0b"
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        plugins: { legend: { position: "bottom" } },
+        scales: { y: { beginAtZero: true, title: { display: true, text: "ms" } } }
+      }
+    });
+  }, function () { noAccess("siteComparisonWrap", "performance"); });
 
   // --- Sessions (cross-referenced - one row per session, not per event) ---
   function fmtDuration(secs) {

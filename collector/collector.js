@@ -159,7 +159,14 @@
       timing: entry.toJSON(), // the whole PerformanceNavigationTiming object
       pageLoadStart: new Date(performance.timeOrigin + entry.startTime).toISOString(),
       pageLoadEnd: new Date(performance.timeOrigin + entry.loadEventEnd).toISOString(),
-      totalLoadTimeMs: Math.round(entry.loadEventEnd - entry.startTime)
+      totalLoadTimeMs: Math.round(entry.loadEventEnd - entry.startTime),
+      // How many sub-resources (CSS, JS, images, fonts, XHR/fetch, ...) this
+      // page pulled in, not counting the document itself - lets the
+      // reporting dashboard estimate an "expected" load time for a basic
+      // machine from how much a page actually has to fetch, instead of
+      // comparing raw load times across sites with wildly different
+      // resource counts as if that were a fair comparison.
+      resourceCount: performance.getEntriesByType('resource').length
     };
   }
 
