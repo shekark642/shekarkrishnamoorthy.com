@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Music Site Metrics — Analytics</title>
+<link rel="icon" type="image/svg+xml" href="https://shekarkrishnamoorthy.com/favicon.svg">
+<style>
+  body { font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif; background: #f8fafc; color: #0f172a; margin: 0; padding: 2rem 1.5rem 4rem; overflow-x: hidden; }
+  main { max-width: 1000px; margin: 0 auto; }
+  header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 0.8rem; }
+  header h1 { font-size: 1.35rem; margin: 0 0 0.2rem; }
+  header p { margin: 0; color: #64748b; font-size: 0.85rem; }
+  nav a { color: #0284c7; text-decoration: none; font-size: 0.88rem; margin-left: 1.1rem; font-weight: 600; }
+
+  .card { background: #fff; border: 1px solid #dbe3ee; border-radius: 16px; padding: 1.5rem 1.75rem; margin-bottom: 1.5rem; }
+  .card h2 { font-size: 1rem; margin: 0 0 0.9rem; }
+
+  .filter-row { display: flex; align-items: flex-end; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.2rem; }
+  .filter-row label { display: block; font-size: 0.78rem; font-weight: 600; color: #334155; margin-bottom: 0.3rem; }
+  .filter-row input[type="number"] { width: 140px; padding: 0.5rem 0.7rem; border: 1px solid #dbe3ee; border-radius: 7px; font-size: 0.88rem; }
+  .filter-row select { padding: 0.5rem 0.7rem; border: 1px solid #dbe3ee; border-radius: 7px; font-size: 0.88rem; }
+  .btn { border: none; border-radius: 8px; padding: 0.6rem 1.2rem; background: #0284c7; color: #fff; font-weight: 600; font-size: 0.88rem; cursor: pointer; }
+  .btn:hover { background: #0369a1; }
+  .filter-count { color: #64748b; font-size: 0.82rem; margin-left: auto; }
+
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+  th, td { text-align: left; padding: 0.55rem 0.7rem; border-bottom: 1px solid #eef2f7; white-space: nowrap; }
+  th { color: #475569; font-weight: 600; cursor: pointer; user-select: none; }
+  th:hover { color: #0284c7; }
+  td.mono { font-family: ui-monospace, Consolas, monospace; font-size: 0.78rem; }
+  td.num { text-align: right; }
+  .empty { color: #94a3b8; font-size: 0.85rem; font-style: italic; }
+  .no-access { color: #94a3b8; font-size: 0.85rem; font-style: italic; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div>
+      <h1>Music Site Metrics</h1>
+      <p>Per-session behavior on test.shekarkrishnamoorthy.com specifically.</p>
+    </div>
+    <nav>
+      <a href="/index.html">&larr; Dashboard</a>
+      <a href="/reports.html">Saved Reports</a>
+      <a href="#" id="adminLink" style="display:none">User Management</a>
+      <a href="#" id="logoutLink">Log out</a>
+    </nav>
+  </header>
+
+  <div class="card">
+    <h2>Sessions</h2>
+    <div class="filter-row">
+      <div>
+        <label for="minSeconds">Min. total time (seconds)</label>
+        <input type="number" id="minSeconds" min="0" value="0" placeholder="e.g. 30">
+      </div>
+      <div>
+        <label for="sortBy">Sort by</label>
+        <select id="sortBy">
+          <option value="durationSecs">Total time</option>
+          <option value="usefulClicks">Useful clicks</option>
+          <option value="totalClicks">Total clicks</option>
+        </select>
+      </div>
+      <button class="btn" id="applyBtn">Apply Filter</button>
+      <span class="filter-count" id="filterCount"></span>
+    </div>
+    <div class="table-wrap" id="tableWrap">
+      <p class="empty">Loading...</p>
+    </div>
+  </div>
+</main>
+
+<script>
+(function () {
+  "use strict";
+  var SITE_PREFIX = "https://test.shekarkrishnamoorthy.com/";
+  var PAGE_LABELS = {
+    "https://test.shekarkrishnamoorthy.com/": "Home",
+    "https://test.shekarkrishnamoorthy.com/page2.html": "Page 2",
+    "https://test.shekarkrishnamoorthy.com/page3.html": "Page 3"
+  };
+  var lastRows = [];
+
+  function esc(s) { return String(s).replace(/</g, "&lt;"); }
+  function fmtDuration(secs) {
+    if (secs === null || secs === undefined) return "—";
+    if (secs < 60) return secs + "s";
+    return Math.floor(secs / 60) + "m " + (secs % 60) + "s";
+  }
+
+  fetch("/auth/me").then(function (r) { return r.json(); }).then(function (me) {
+    if (me.role === "super_admin") {
+      var link = document.getElementById("adminLink");
+      link.style.display = "inline";
+      link.href = "/users.html";
+    }
+  });
+
+  document.getElementById("logoutLink").addEventListener("click", function (e) {
+    e.preventDefault();
+    fetch("/auth/logout", { method: "POST" }).then(function () { window.location.href = "/logout.html"; });
+  });
+
+  function renderTable(rows) {
+    var wrap = document.getElementById("tableWrap");
+    document.getElementById("filterCount").textContent = rows.length + " session" + (rows.length === 1 ? "" : "s");
+    if (!rows.length) {
+      wrap.innerHTML = '<p class="empty">No sessions match this filter.</p>';
+      return;
+    }
+    var pageKeys = Object.keys(PAGE_LABELS);
+    var head = "<tr><th>Session</th><th>Total Time</th>" +
+      pageKeys.map(function (k) { return "<th>" + PAGE_LABELS[k] + "</th>"; }).join("") +
+      "<th>Submitted?</th><th>Useful Clicks</th><th>Total Clicks</th></tr>";
+    var body = rows.map(function (r) {
+      return "<tr><td class='mono'>" + esc(r.session_id.slice(0, 14)) + "</td>" +
+        "<td class='num'>" + fmtDuration(r.durationSecs) + "</td>" +
+        pageKeys.map(function (k) {
+          var secs = r.pageTime && r.pageTime[k];
+          return "<td class='num'>" + (secs ? fmtDuration(Math.round(secs)) : "—") + "</td>";
+        }).join("") +
+        "<td>" + (r.submitted ? "✅" : "—") + "</td>" +
+        "<td class='num'>" + r.usefulClicks + "</td>" +
+        "<td class='num'>" + r.totalClicks + "</td></tr>";
+    }).join("");
+    wrap.innerHTML = "<table><thead>" + head + "</thead><tbody>" + body + "</tbody></table>";
+  }
+
+  function applySort(rows) {
+    var key = document.getElementById("sortBy").value;
+    return rows.slice().sort(function (a, b) { return (b[key] || 0) - (a[key] || 0); });
+  }
+
+  function loadSessions() {
+    var minSeconds = Math.max(0, parseInt(document.getElementById("minSeconds").value, 10) || 0);
+    document.getElementById("tableWrap").innerHTML = '<p class="empty">Loading...</p>';
+    fetch("/api/behavioral/site-sessions?urlPrefix=" + encodeURIComponent(SITE_PREFIX) + "&minSeconds=" + minSeconds + "&limit=200")
+      .then(function (r) {
+        if (r.status === 403) { document.getElementById("tableWrap").innerHTML = '<p class="no-access">No access to the "behavioral" section.</p>'; return null; }
+        return r.json();
+      })
+      .then(function (rows) {
+        if (!rows) return;
+        lastRows = rows;
+        renderTable(applySort(rows));
+      });
+  }
+
+  document.getElementById("applyBtn").addEventListener("click", loadSessions);
+  document.getElementById("minSeconds").addEventListener("keydown", function (e) { if (e.key === "Enter") loadSessions(); });
+  document.getElementById("sortBy").addEventListener("change", function () { renderTable(applySort(lastRows)); });
+
+  loadSessions();
+})();
+</script>
+</body>
+</html>

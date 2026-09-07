@@ -977,6 +977,134 @@ app.get('/api/behavioral/bot-score/:sessionId', requireSectionApi('behavioral'),
   }
 });
 
+// --- Site-specific session metrics ---
+//
+// GET /api/behavioral/site-sessions?urlPrefix=&minSeconds=&limit= - one row
+// per session that visited a given site, with total time, a per-page time
+// breakdown, and click quality - not hardcoded to any one page, so it
+// works for the test/music site today and the About Me or Projects pages
+// later without a new endpoint each time.
+//
+// Per-page dwell time isn't a column anywhere - it's reconstructed from
+// existing event timestamps. sessionStorage (where collector.js keeps the
+// session id) is scoped per origin, so any session with an event under
+// urlPrefix has ALL its events on that same site - no cross-site mixing
+// to filter out. Consecutive same-URL events collapse into one "block";
+// each block's dwell time is the gap until the next block starts (the
+// last block runs to the session's last event). A session bouncing
+// A -> B -> A sums both A-blocks together, so the per-page total is
+// still correct even with back-and-forth navigation.
+//
+// "Useful clicks" relies on the `useful` flag collector.js now stamps on
+// every click (landed on an actual interactive element vs. empty page
+// space) - computed here from the raw activity payloads already being
+// pulled for the page-time breakdown, not a second round trip.
+// A site's root ("https://host/") and its default document
+// ("https://host/index.html") are the same page, but different code paths
+// report window.location.href differently (address-bar nav vs an internal
+// link to the explicit filename) - without this they'd silently split one
+// page's time across two buckets.
+function normalizePageUrl(url) {
+  return typeof url === 'string' ? url.replace(/index\.html$/, '') : url;
+}
+
+function computePageBreakdown(rows) {
+  const blocks = [];
+  rows.forEach((r) => {
+    const url = normalizePageUrl(r.url);
+    const last = blocks[blocks.length - 1];
+    if (last && last.url === url) {
+      last.lastTs = r.ts;
+    } else {
+      blocks.push({ url: url, firstTs: r.ts, lastTs: r.ts });
+    }
+  });
+  const pageTime = {};
+  for (let i = 0; i < blocks.length; i++) {
+    const start = new Date(blocks[i].firstTs);
+    const end = i + 1 < blocks.length ? new Date(blocks[i + 1].firstTs) : new Date(blocks[i].lastTs);
+    const secs = Math.max(0, (end - start) / 1000);
+    pageTime[blocks[i].url] = (pageTime[blocks[i].url] || 0) + secs;
+  }
+  return pageTime;
+}
+
+app.get('/api/behavioral/site-sessions', requireSectionApi('behavioral'), async (req, res) => {
+  const urlPrefix = typeof req.query.urlPrefix === 'string' ? req.query.urlPrefix : '';
+  if (!urlPrefix) return res.status(400).json({ error: 'urlPrefix is required' });
+  const minSeconds = Math.max(parseInt(req.query.minSeconds, 10) || 0, 0);
+  const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 500);
+
+  try {
+    const [base] = await dbPool.query(
+      `SELECT
+         session_id,
+         MIN(COALESCE(client_timestamp, server_timestamp)) AS firstSeen,
+         MAX(COALESCE(client_timestamp, server_timestamp)) AS lastSeen,
+         TIMESTAMPDIFF(SECOND,
+           MIN(COALESCE(client_timestamp, server_timestamp)),
+           MAX(COALESCE(client_timestamp, server_timestamp))) AS durationSecs,
+         MAX(CASE WHEN type = 'submit_click' THEN 1 ELSE 0 END) = 1 AS submitted
+       FROM events
+       WHERE type != 'load' AND session_id IN (
+         SELECT DISTINCT session_id FROM events WHERE url LIKE ? AND session_id IS NOT NULL
+       )
+       GROUP BY session_id
+       HAVING durationSecs >= ?
+       ORDER BY durationSecs DESC
+       LIMIT ?`,
+      [urlPrefix + '%', minSeconds, limit]
+    );
+    if (!base.length) return res.json([]);
+
+    const ids = base.map((r) => r.session_id);
+    const placeholders = ids.map(() => '?').join(',');
+
+    // Lean columns for the page-time breakdown - no payload here, so this
+    // stays cheap even for sessions with a lot of events.
+    const [eventRows] = await dbPool.query(
+      `SELECT session_id, url, COALESCE(client_timestamp, server_timestamp) AS ts
+       FROM events
+       WHERE type != 'load' AND session_id IN (${placeholders})
+       ORDER BY session_id, id ASC`,
+      ids
+    );
+    const eventsBySession = {};
+    eventRows.forEach((r) => { (eventsBySession[r.session_id] = eventsBySession[r.session_id] || []).push(r); });
+
+    // Payload only for 'activity' rows, since that's the only type carrying
+    // mouseClicks - not dragging every row's JSON through the query above.
+    const [activityRows] = await dbPool.query(
+      `SELECT session_id, payload
+       FROM events
+       WHERE type = 'activity' AND session_id IN (${placeholders})`,
+      ids
+    );
+    const clicksBySession = {};
+    activityRows.forEach((r) => {
+      const clicks = (r.payload || {}).mouseClicks;
+      if (!Array.isArray(clicks)) return;
+      const c = clicksBySession[r.session_id] || { total: 0, useful: 0 };
+      clicks.forEach((click) => { c.total++; if (click.useful) c.useful++; });
+      clicksBySession[r.session_id] = c;
+    });
+
+    res.json(base.map((r) => ({
+      session_id: r.session_id,
+      firstSeen: r.firstSeen,
+      lastSeen: r.lastSeen,
+      durationSecs: r.durationSecs,
+      submitted: r.submitted,
+      pageTime: computePageBreakdown(eventsBySession[r.session_id] || []),
+      totalClicks: (clicksBySession[r.session_id] || { total: 0 }).total,
+      usefulClicks: (clicksBySession[r.session_id] || { useful: 0 }).useful
+    })));
+  } catch (err) {
+    console.error('[GET /api/behavioral/site-sessions] error:', err.message);
+    res.status(500).json({ error: 'database error' });
+  }
+});
+
 // --- Saved reports ---
 //
 // "A viewer can only look at saved reports, which are just set views, even
@@ -1434,6 +1562,10 @@ app.get('/users.html', requireRolePage('super_admin'), (req, res) => {
 
 app.get('/performance.html', requireRolePage('super_admin', 'analyst'), (req, res) => {
   res.sendFile(path.join(PAGES_DIR, 'performance.html'));
+});
+
+app.get('/music.html', requireRolePage('super_admin', 'analyst'), (req, res) => {
+  res.sendFile(path.join(PAGES_DIR, 'music.html'));
 });
 
 // Reachable by all three roles: it's the viewer's only page, but analysts

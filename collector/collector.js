@@ -200,10 +200,16 @@
 
   document.addEventListener('click', function (e) {
     noteActivity();
+    // "Useful" = landed on something actually interactive, not empty page
+    // space - the simplest honest signal available without tracking every
+    // element's identity. e.target.closest is unavailable on plain text
+    // nodes, but click targets are always elements.
+    var interactive = e.target.closest && e.target.closest('a,button,input,select,textarea,label,[role="button"],[onclick]');
     mouseClicks.push({
       x: e.clientX,
       y: e.clientY,
       button: e.button, // 0 = left, 1 = middle, 2 = right
+      useful: !!interactive,
       timestamp: new Date().toISOString()
     });
   }, true);
