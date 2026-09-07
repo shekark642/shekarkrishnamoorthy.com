@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Saved Reports — Analytics Dashboard</title>
+<title>Reports — Analytics Dashboard</title>
 <link rel="icon" type="image/svg+xml" href="https://shekarkrishnamoorthy.com/favicon.svg">
 <style>
   body { font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif; background: #f8fafc; color: #0f172a; margin: 0; padding: 2rem 1.5rem 4rem; }
@@ -43,14 +43,20 @@
 <body>
 <main>
   <header>
-    <h1>Saved Reports</h1>
+    <h1>Reports</h1>
     <nav id="mainNav">
       <a href="#" id="logoutLink">Log out</a>
     </nav>
   </header>
 
   <div class="card">
-    <h2>Reports</h2>
+    <h2>Detailed Performance Report</h2>
+    <p style="color:#64748b;font-size:0.85rem;margin:0 0 0.9rem">Web Vitals thresholds, a load-time distribution histogram, and a plain-language read of whether the site is loading fast enough.</p>
+    <a class="btn" href="/performance.html">Open Detailed Performance Report &rarr;</a>
+  </div>
+
+  <div class="card">
+    <h2>Saved &amp; Ad-Hoc Reports</h2>
     <ul class="report-list" id="reportList"></ul>
   </div>
 

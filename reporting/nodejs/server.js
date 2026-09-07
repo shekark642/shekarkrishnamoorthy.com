@@ -624,13 +624,13 @@ app.get('/api/performance/events', requireSectionApi('performance'), async (req,
   }
 });
 
-// GET /api/performance/site-comparison - actual average load time per
-// tracked site vs. an estimated "expected" load time for a basic
-// machine/connection, derived from how many sub-resources that site's
-// pages actually make the browser fetch (resourceCount, added to the
-// 'load' event's own payload in collector.js). Sites are discovered from
-// the url column itself, not a fixed list here - a newly tracked site (or
-// page) just starts appearing once it sends its first 'load' event, with
+// GET /api/performance/page-comparison - actual average load time per
+// tracked PAGE (not just per site) vs. an estimated "expected" load time
+// for a basic machine/connection, derived from how many sub-resources
+// that page actually makes the browser fetch (resourceCount, added to
+// the 'load' event's own payload in collector.js). Pages are discovered
+// from the url column itself, not a fixed list here - a newly tracked
+// page just starts appearing once it sends its first 'load' event, with
 // nothing to update in this file.
 //
 // The "expected" formula is a deliberately simple, fully transparent
@@ -652,32 +652,57 @@ const SITE_COMPARISON_PER_RESOURCE_MS = 40;
 // see that showing up in the dashboard/tracking/logs"), so the handful of
 // 'load' rows still in the table from before that change (plus this
 // session's own manual testing) don't belong in a chart meant to compare
-// real tracked sites.
-app.get('/api/performance/site-comparison', requireSectionApi('performance'), async (req, res) => {
+// real tracked pages.
+app.get('/api/performance/page-comparison', requireSectionApi('performance'), async (req, res) => {
   try {
     const [rows] = await dbPool.query(`
       SELECT
-        SUBSTRING_INDEX(SUBSTRING_INDEX(url, '//', -1), '/', 1) AS host,
+        url,
         COUNT(*) AS sampleSize,
         AVG(total_load_time_ms) AS avgLoadTimeMs,
-        AVG(JSON_EXTRACT(payload, '$.performanceData.resourceCount')) AS avgResourceCount
+        AVG(JSON_EXTRACT(payload, '$.performanceData.resourceCount')) AS avgResourceCount,
+        COUNT(JSON_EXTRACT(payload, '$.performanceData.resourceCount')) AS resourceSamples
       FROM events
       WHERE type = 'load' AND url IS NOT NULL
         AND url NOT LIKE 'https://reporting.shekarkrishnamoorthy.com/%'
-      GROUP BY host
-      ORDER BY avgLoadTimeMs DESC
+      GROUP BY url
     `);
-    res.json(rows.map((r) => ({
-      host: r.host,
-      sampleSize: r.sampleSize,
-      avgLoadTimeMs: r.avgLoadTimeMs,
-      avgResourceCount: r.avgResourceCount,
-      expectedLoadTimeMs: r.avgResourceCount === null
-        ? null
-        : SITE_COMPARISON_FIXED_OVERHEAD_MS + r.avgResourceCount * SITE_COMPARISON_PER_RESOURCE_MS
-    })));
+
+    // Root ("/") and the explicit "/index.html" are the same page under two
+    // different URL strings (see normalizePageUrl) - merged here with a
+    // sample-size-weighted average rather than a plain average of the two
+    // rows' averages, so a page with 2 samples doesn't count as heavily as
+    // one with 200.
+    const byPage = {};
+    rows.forEach((r) => {
+      const page = normalizePageUrl(r.url);
+      const entry = byPage[page] || { page, sampleSize: 0, loadTimeSum: 0, resourceCountSum: 0, resourceSamples: 0 };
+      entry.sampleSize += r.sampleSize;
+      entry.loadTimeSum += r.avgLoadTimeMs * r.sampleSize;
+      if (r.avgResourceCount !== null) {
+        entry.resourceCountSum += r.avgResourceCount * r.resourceSamples;
+        entry.resourceSamples += r.resourceSamples;
+      }
+      byPage[page] = entry;
+    });
+
+    const result = Object.values(byPage).map((e) => {
+      const avgLoadTimeMs = e.loadTimeSum / e.sampleSize;
+      const avgResourceCount = e.resourceSamples ? e.resourceCountSum / e.resourceSamples : null;
+      return {
+        page: e.page,
+        sampleSize: e.sampleSize,
+        avgLoadTimeMs,
+        avgResourceCount,
+        expectedLoadTimeMs: avgResourceCount === null
+          ? null
+          : SITE_COMPARISON_FIXED_OVERHEAD_MS + avgResourceCount * SITE_COMPARISON_PER_RESOURCE_MS
+      };
+    }).sort((a, b) => b.avgLoadTimeMs - a.avgLoadTimeMs);
+
+    res.json(result);
   } catch (err) {
-    console.error('[GET /api/performance/site-comparison] error:', err.message);
+    console.error('[GET /api/performance/page-comparison] error:', err.message);
     res.status(500).json({ error: 'database error' });
   }
 });
@@ -886,6 +911,7 @@ app.get('/api/behavioral/visitor-types', requireSectionApi('behavioral'), async 
 app.get('/api/behavioral/top-sessions', requireSectionApi('behavioral'), async (req, res) => {
   const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 5, 1), 20);
   const orderCol = req.query.sortBy === 'recent' ? 'lastSeen' : 'durationSecs';
+  const minSeconds = Math.max(parseInt(req.query.minSeconds, 10) || 0, 0);
 
   try {
     const [base] = await dbPool.query(
@@ -904,9 +930,10 @@ app.get('/api/behavioral/top-sessions', requireSectionApi('behavioral'), async (
        FROM events
        WHERE type != 'load' AND session_id IS NOT NULL
        GROUP BY session_id
+       HAVING durationSecs >= ?
        ORDER BY ${orderCol} DESC
        LIMIT ?`,
-      [limit]
+      [minSeconds, limit]
     );
     if (!base.length) return res.json([]);
 
@@ -1371,20 +1398,43 @@ app.get('/api/behavioral/page-visits', requireSectionApi('behavioral'), async (r
 });
 
 // GET /api/behavioral/project-popularity - click counts per project on the
-// Projects page, most-clicked first. projectTitle is read straight out of
-// each project_click event's own payload (see projects.html) rather than
-// from any list of known project names kept here - a newly added project
-// on the page just starts appearing in this breakdown the first time
-// someone clicks it, with nothing to update server-side.
+// Projects page, most-clicked first - including projects with zero clicks,
+// not just the ones someone happened to click. Click counts alone can only
+// ever mention a project that's been clicked at least once; "which
+// projects exist at all" comes from a separate project_page_view event
+// projects.html fires once per page view with its full current project
+// list (see important/projects.html), so a project someone never clicked
+// still shows up with clicks: 0 instead of being silently missing.
+//
+// Uses the MOST RECENT page_view's list as "current" (not every title
+// ever seen across history) - if a project is later removed from the
+// page, it should stop appearing here too. Any project with click history
+// that isn't in that latest list (e.g. removed since, or its page_view
+// hasn't landed yet) still gets included - old click history doesn't just
+// disappear because the list changed.
 app.get('/api/behavioral/project-popularity', requireSectionApi('behavioral'), async (req, res) => {
   try {
-    const [rows] = await dbPool.query(`
+    const [[latestPageView]] = await dbPool.query(
+      "SELECT payload FROM events WHERE type = 'project_page_view' ORDER BY id DESC LIMIT 1"
+    );
+    const knownTitles = latestPageView && Array.isArray(latestPageView.payload.projectTitles)
+      ? latestPageView.payload.projectTitles
+      : [];
+
+    const [clickRows] = await dbPool.query(`
       SELECT JSON_UNQUOTE(JSON_EXTRACT(payload, '$.projectTitle')) AS projectTitle, COUNT(*) AS clicks
       FROM events
       WHERE type = 'project_click' AND JSON_EXTRACT(payload, '$.projectTitle') IS NOT NULL
       GROUP BY projectTitle
-      ORDER BY clicks DESC
     `);
+    const clicksByTitle = {};
+    clickRows.forEach((r) => { clicksByTitle[r.projectTitle] = r.clicks; });
+
+    const allTitles = new Set([...knownTitles, ...Object.keys(clicksByTitle)]);
+    const rows = [...allTitles]
+      .map((projectTitle) => ({ projectTitle, clicks: clicksByTitle[projectTitle] || 0 }))
+      .sort((a, b) => b.clicks - a.clicks);
+
     res.json(rows);
   } catch (err) {
     console.error('[GET /api/behavioral/project-popularity] error:', err.message);

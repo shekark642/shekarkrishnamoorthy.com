@@ -191,6 +191,15 @@
 
   sortSelect.addEventListener("change", () => render(sortSelect.value));
   render(sortSelect.value);
+
+  // Reports the full current project list once per page view (not per
+  // click) - this is what lets the analytics dashboard show every project,
+  // including ones with zero clicks, instead of only ever knowing about
+  // whichever ones happened to get clicked. Sent once, not per sort
+  // change, since sorting doesn't change which projects exist.
+  if (window.collector) {
+    window.collector.track("project_page_view", { projectTitles: projects.map(p => p.title) });
+  }
 </script>
 
 </body>

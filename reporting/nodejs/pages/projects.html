@@ -32,6 +32,7 @@
   .sequence-path { display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem; font-size: 0.82rem; }
   .seq-step { background: #eff6ff; color: #0284c7; border-radius: 6px; padding: 0.2rem 0.55rem; font-weight: 600; }
   .seq-arrow { color: #94a3b8; }
+  .seq-gap { font-size: 0.72rem; color: #94a3b8; }
 </style>
 </head>
 <body>
@@ -43,7 +44,7 @@
     </div>
     <nav>
       <a href="/index.html">&larr; Dashboard</a>
-      <a href="/reports.html">Saved Reports</a>
+      <a href="/reports.html">Reports</a>
       <a href="#" id="adminLink" style="display:none">User Management</a>
       <a href="#" id="logoutLink">Log out</a>
     </nav>
@@ -154,7 +155,12 @@
     }
     document.getElementById("sequenceWrap").innerHTML = rows.map(function (r) {
       var path = r.clicks.map(function (c, i) {
-        return (i > 0 ? '<span class="seq-arrow">&rarr;</span>' : "") +
+        var gap = "";
+        if (i > 0) {
+          var secs = Math.round((new Date(c.timestamp) - new Date(r.clicks[i - 1].timestamp)) / 1000);
+          gap = '<span class="seq-arrow">&rarr; <span class="seq-gap">(' + fmtDuration(secs) + ')</span> &rarr;</span>';
+        }
+        return gap +
           '<span class="seq-step">' + (i + 1) + ". " + esc(c.projectTitle) + "</span>";
       }).join("");
       return '<div class="sequence-row"><div class="sess">' + esc(r.session_id.slice(0, 14)) +

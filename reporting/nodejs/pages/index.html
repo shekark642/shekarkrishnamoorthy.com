@@ -26,7 +26,7 @@
   .card { background: #fff; border: 1px solid #dbe3ee; border-radius: 16px; padding: 1.5rem 1.75rem; margin-bottom: 1.5rem; }
   .card h2 { font-size: 1rem; margin: 0 0 0.9rem; }
   .card canvas { max-height: 260px; }
-  #siteComparisonWrap { height: 300px; }
+  #siteComparisonWrap { height: 340px; }
   .no-access { color: #94a3b8; font-size: 0.85rem; font-style: italic; }
 
   table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
@@ -45,7 +45,6 @@
   .btn-replay:hover { background: #dbeafe; }
   .replay-canvas { display: none; width: 100%; height: 160px; margin-top: 0.6rem; border: 1px solid #dbe3ee; border-radius: 8px; background: #f8fafc; }
 
-  .cta-row { display: flex; gap: 0.8rem; margin-top: 1.5rem; flex-wrap: wrap; }
   .btn { display: inline-block; border: none; border-radius: 8px; padding: 0.65rem 1.2rem; background: #0284c7; color: #fff; font-weight: 600; text-decoration: none; font-size: 0.88rem; cursor: pointer; }
   .btn:hover { background: #0369a1; }
   .btn.secondary { background: #e2e8f0; color: #0f172a; }
@@ -63,7 +62,7 @@
       <a href="/music.html">Music Site Metrics</a>
       <a href="/about-me.html">About Me Metrics</a>
       <a href="/projects.html">Projects Metrics</a>
-      <a href="/reports.html">Saved Reports</a>
+      <a href="/reports.html">Reports</a>
       <a href="#" id="adminLink" style="display:none">User Management</a>
       <a href="#" id="logoutLink">Log out</a>
     </nav>
@@ -83,20 +82,9 @@
   </div>
 
   <div class="card">
-    <h2>Actual vs. Expected Load Time by Site</h2>
-    <p style="margin:-0.4rem 0 0.9rem;color:#64748b;font-size:0.82rem">Average real load time per tracked site, next to an estimated baseline for a basic machine/connection based on how many resources that site's pages actually fetch. Sites are discovered automatically - a newly tracked page just starts showing up here.</p>
+    <h2>Actual vs. Expected Load Time by Page</h2>
+    <p style="margin:-0.4rem 0 0.9rem;color:#64748b;font-size:0.82rem">Average real load time per tracked page, next to an estimated baseline for a basic machine/connection based on how many resources that page actually fetches. Pages are discovered automatically - a newly tracked page just starts showing up here.</p>
     <div id="siteComparisonWrap"><canvas id="siteComparisonChart"></canvas></div>
-  </div>
-
-  <div class="card">
-    <h2>Sessions (behavioral)</h2>
-    <p style="margin:-0.4rem 0 0.9rem;color:#64748b;font-size:0.82rem">Who and when - every session's scattered behavioral events (enter/activity/exit/submit_click) cross-referenced into one row per visitor.</p>
-    <div id="sessionsWrap">
-      <table>
-        <thead><tr><th>Session</th><th>User</th><th>IP</th><th>First Seen</th><th>Last Seen</th></tr></thead>
-        <tbody id="sessionRows"></tbody>
-      </table>
-    </div>
   </div>
 
   <div class="card">
@@ -110,12 +98,6 @@
     </div>
   </div>
 
-  <div class="card">
-    <h2>Top 5 Most Recent Sessions (behavioral)</h2>
-    <p style="margin:-0.4rem 0 0.9rem;color:#64748b;font-size:0.82rem">Device, activity totals, exit page (where they were when the session ended), and a mouse-movement replay for each.</p>
-    <div class="session-grid" id="recentSessionGrid"></div>
-  </div>
-
   <div class="card" id="flaggedCard" style="display:none">
     <h2>Flagged Clients</h2>
     <p style="margin:-0.4rem 0 0.9rem;color:#64748b;font-size:0.82rem">Anything a request/client did that reads as suspicious or malicious - rate-limit floods, oversized payloads, injection-shaped inputs, failed logins. Super admin only.</p>
@@ -127,9 +109,22 @@
     </div>
   </div>
 
-  <div class="cta-row">
-    <a class="btn" href="/performance.html">Generate Detailed Report &rarr;</a>
-    <a class="btn secondary" href="/reports.html">View Saved Reports</a>
+  <div class="card">
+    <h2>Top 5 Most Recent Sessions Above 5s (behavioral)</h2>
+    <p style="margin:-0.4rem 0 0.9rem;color:#64748b;font-size:0.82rem">Device, activity totals, exit page (where they were when the session ended), and a mouse-movement replay for each. Excludes sessions under 5 seconds - too short for anything here to be meaningful.</p>
+    <div class="session-grid" id="recentSessionGrid"></div>
+  </div>
+
+  <div class="card">
+    <h2>Sessions (behavioral)</h2>
+    <p style="margin:-0.4rem 0 0.9rem;color:#64748b;font-size:0.82rem">Who and when - every session's scattered behavioral events (enter/activity/exit/submit_click) cross-referenced into one row per visitor.</p>
+    <div id="sessionsWrap">
+      <table>
+        <thead><tr><th>Session</th><th>User</th><th>IP</th><th>First Seen</th><th>Last Seen</th></tr></thead>
+        <tbody id="sessionRows"></tbody>
+      </table>
+    </div>
+    <button class="btn secondary" id="sessionsExtendBtn" style="margin-top:0.9rem">Show up to 100 rows</button>
   </div>
 </main>
 
@@ -244,24 +239,36 @@
     });
   }, function () { noAccess("loadTimeChartWrap", "performance"); });
 
-  // --- Actual vs. Expected Load Time by Site (comparison bar chart) ---
-  fetchScoped("/api/performance/site-comparison", function (rows) {
+  // --- Actual vs. Expected Load Time by Page (comparison bar chart) ---
+  //
+  // The API returns every distinct tracked URL (including odd variants
+  // like a cachebust query string or a stray www. prefix) - this chart is
+  // meant to show just the handful of real pages someone cares to compare,
+  // with friendly names. To track a new page here later, add one entry
+  // below (url must match page-comparison's normalized url exactly - root
+  // pages end in "/", not "/index.html") - nothing else needs to change.
+  var TRACKED_PAGES = [
+    { url: "https://test.shekarkrishnamoorthy.com/", label: "music" },
+    { url: "https://shekarkrishnamoorthy.com/", label: "home" },
+    { url: "https://shekarkrishnamoorthy.com/members/shekarkrishnamoorthy.html", label: "about me" },
+    { url: "https://shekarkrishnamoorthy.com/important/projects.html", label: "projects" }
+  ];
+
+  fetchScoped("/api/performance/page-comparison", function (allRows) {
+    var rowByUrl = {};
+    allRows.forEach(function (r) { rowByUrl[r.page] = r; });
+    var rows = TRACKED_PAGES
+      .map(function (tp) { return rowByUrl[tp.url] ? Object.assign({ label: tp.label }, rowByUrl[tp.url]) : null; })
+      .filter(Boolean);
+
     if (!rows.length) {
       document.getElementById("siteComparisonWrap").innerHTML = '<p class="no-access">No load-time data recorded yet.</p>';
       return;
     }
-    // Full hostnames ("test.shekarkrishnamoorthy.com") are long enough
-    // that, rotated under a short chart, their label area was crowding out
-    // the bars almost entirely - trimming the shared domain suffix keeps
-    // labels short regardless of how many sites get added later.
-    function shortHost(host) {
-      var trimmed = host.replace(/\.?shekarkrishnamoorthy\.com$/, "");
-      return trimmed || "main site";
-    }
     new Chart(document.getElementById("siteComparisonChart"), {
       type: "bar",
       data: {
-        labels: rows.map(function (r) { return shortHost(r.host); }),
+        labels: rows.map(function (r) { return r.label; }),
         datasets: [
           {
             label: "Actual (avg)",
@@ -301,15 +308,28 @@
   }
   function fmtUser(userNumber) { return userNumber ? "User " + userNumber : "—"; }
 
-  fetchScoped("/api/behavioral/sessions?limit=20", function (rows) {
-    document.getElementById("sessionRows").innerHTML = rows.map(function (r) {
-      return "<tr><td class='mono'>" + r.session_id.slice(0, 12) + "</td>" +
-        "<td>" + fmtUser(r.userNumber) + "</td>" +
-        "<td class='mono'>" + esc(r.ip || "—") + "</td>" +
-        "<td class='mono'>" + fmtDateTime(r.firstSeen) + "</td>" +
-        "<td class='mono'>" + fmtDateTime(r.lastSeen) + "</td></tr>";
-    }).join("");
-  }, function () { noAccess("sessionsWrap", "behavioral"); });
+  function loadSessions(limit) {
+    fetchScoped("/api/behavioral/sessions?limit=" + limit, function (rows) {
+      document.getElementById("sessionRows").innerHTML = rows.map(function (r) {
+        return "<tr><td class='mono'>" + r.session_id.slice(0, 12) + "</td>" +
+          "<td>" + fmtUser(r.userNumber) + "</td>" +
+          "<td class='mono'>" + esc(r.ip || "—") + "</td>" +
+          "<td class='mono'>" + fmtDateTime(r.firstSeen) + "</td>" +
+          "<td class='mono'>" + fmtDateTime(r.lastSeen) + "</td></tr>";
+      }).join("");
+    }, function () {
+      noAccess("sessionsWrap", "behavioral");
+      document.getElementById("sessionsExtendBtn").style.display = "none";
+    });
+  }
+  loadSessions(20);
+
+  var sessionsExpanded = false;
+  document.getElementById("sessionsExtendBtn").addEventListener("click", function () {
+    sessionsExpanded = !sessionsExpanded;
+    loadSessions(sessionsExpanded ? 100 : 20);
+    this.textContent = sessionsExpanded ? "Show fewer rows" : "Show up to 100 rows";
+  });
 
   // --- Distinct Users (IP-based identity proxy, sessions per user) ---
   fetchScoped("/api/behavioral/distinct-users?limit=20", function (rows) {
@@ -455,7 +475,7 @@
       });
   });
 
-  fetchScoped("/api/behavioral/top-sessions?sortBy=recent&limit=5", function (rows) {
+  fetchScoped("/api/behavioral/top-sessions?sortBy=recent&limit=5&minSeconds=5", function (rows) {
     document.getElementById("recentSessionGrid").innerHTML = rows.length
       ? rows.map(function (r, idx) { return sessionCardHtml(r, idx + 1); }).join("")
       : '<p class="no-access">No sessions yet.</p>';
