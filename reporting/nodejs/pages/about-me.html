@@ -51,6 +51,8 @@
     </nav>
   </header>
 
+  <button class="btn" id="generateReportBtn" style="margin-bottom:1.5rem">Generate Report</button>
+
   <div class="card">
     <h2>Visits</h2>
     <div class="filter-row">
@@ -189,6 +191,10 @@
 
   loadVisits();
 })();
+</script>
+<script src="/assets/report-generator.js"></script>
+<script>
+  window.ReportGenerator.init({ buttonId: "generateReportBtn", captureSelector: "main", sourcePage: "about-me" });
 </script>
 </body>
 </html>

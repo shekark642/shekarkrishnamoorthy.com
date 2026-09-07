@@ -3,11 +3,19 @@ const mysql = require('mysql2/promise');
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const path = require('path');
+const fs = require('fs');
 
 const app = express();
 app.disable('x-powered-by');
 app.set('trust proxy', 'loopback');
-app.use(express.json());
+// 20mb (not the default 100kb) because of one route: POST /api/reports
+// uploads a base64-encoded PDF, which can legitimately run a few MB for a
+// tall captured page. A per-route override doesn't actually work here -
+// this global parser already consumes the request stream before any
+// route-level middleware would run - so the limit has to live here.
+// buffer.length is still hard-capped at 15MB inside that route itself, so
+// this 20mb is a generous outer bound, not the real enforced ceiling.
+app.use(express.json({ limit: '20mb' }));
 
 // Same analytics DB the collector's /collect endpoint writes to. Credentials
 // come from the environment (EnvironmentFile= in the systemd unit) - never
@@ -22,26 +30,24 @@ const dbPool = mysql.createPool({
   queueLimit: 0
 });
 
-// --- Sections ---
+// --- Page access ---
 //
-// The whole authorization model hinges on "section" being something the
-// SERVER decides, never something a client declares - otherwise a analyst
-// restricted to one section could just lie about which section a request
-// is "for" and read anything. So section is derived two ways, both
-// server-controlled: (1) which route was hit (/api/performance/* vs
-// /api/behavioral/*), for aggregate/list endpoints; (2) an event row's own
-// `type` column, for by-id access to a specific event. Nothing about
-// section ever comes from a query param or request body.
-const ALL_SECTIONS = ['performance', 'behavioral'];
+// Access is scoped per dashboard PAGE, not per data category. Dashboard and
+// Reports are baseline pages every authenticated role can reach; only the
+// three metrics pages below vary by role/scope. Which page a request is
+// "for" is always derived from the route that was hit or a server-validated
+// url parameter - never trusted from a client-supplied scope name, for the
+// same reason the old section model never trusted one either.
+const SCOPABLE_PAGES = ['music', 'about-me', 'projects'];
 
-function sectionForEventType(type) {
-  // 'load' events are the ones carrying page-load timing and Web Vitals
-  // (total_load_time_ms, lcp/cls/inp) - that's the entirety of what
-  // "performance" means in this data model. Everything else (enter, exit,
-  // activity, submit_click, and any future custom type) describes what a
-  // visitor did, which is "behavioral."
-  return type === 'load' ? 'performance' : 'behavioral';
-}
+// page-visits (About Me and Projects share this one endpoint) has to derive
+// which scoped page a request is actually about from its own url param,
+// since the endpoint itself isn't page-specific - these are the only two
+// urls it's ever legitimately called with.
+const PAGE_SCOPE_BY_URL = {
+  'https://shekarkrishnamoorthy.com/members/shekarkrishnamoorthy.html': 'about-me',
+  'https://shekarkrishnamoorthy.com/important/projects.html': 'projects'
+};
 
 // --- Sessions ---
 //
@@ -167,21 +173,21 @@ app.use(async (req, res, next) => {
 // --- Authorization ---
 //
 // Three roles: super_admin (everything, including user management),
-// analyst (everything except user management, optionally restricted to a
-// subset of sections), viewer (saved reports only - no direct section
-// access at all, ever).
+// analyst (Dashboard + Reports always, optionally restricted to a subset of
+// the three metrics pages), viewer (Dashboard + Reports only - none of the
+// three metrics pages, ever).
 //
 // An analyst with zero rows in user_scopes is unrestricted ("An analyst
 // can do anything and look at anything" - the default). Adding rows
-// narrows them to exactly those sections ("may be defined... to look at a
-// defined set of sections").
-async function getAllowedSections(session) {
-  if (session.role === 'super_admin') return ALL_SECTIONS;
+// narrows them to exactly those pages ("may be defined... to look at a
+// defined set of" pages, now, rather than sections).
+async function getAllowedPages(session) {
+  if (session.role === 'super_admin') return SCOPABLE_PAGES;
   if (session.role === 'analyst') {
-    const [rows] = await dbPool.query('SELECT section FROM user_scopes WHERE user_id = ?', [session.userId]);
-    return rows.length ? rows.map((r) => r.section) : ALL_SECTIONS;
+    const [rows] = await dbPool.query('SELECT page FROM user_scopes WHERE user_id = ?', [session.userId]);
+    return rows.length ? rows.map((r) => r.page) : SCOPABLE_PAGES;
   }
-  return []; // viewer: no section access, only saved reports
+  return []; // viewer: none of the three metrics pages
 }
 
 // Two flavors of each guard: API routes get a JSON 401/403 (so fetch() calls
@@ -198,15 +204,17 @@ function requireRoleApi(...roles) {
     next();
   };
 }
-function requireSectionApi(section) {
+// Gates one of the three scopable metrics pages' own API endpoints.
+function requirePageApi(page) {
   return async (req, res, next) => {
     if (!req.session) return res.status(401).json({ error: 'not logged in' });
+    if (req.session.role === 'viewer') return res.status(403).json({ error: `no access to page: ${page}` });
     try {
-      const allowed = await getAllowedSections(req.session);
-      if (!allowed.includes(section)) return res.status(403).json({ error: `no access to section: ${section}` });
+      const allowed = await getAllowedPages(req.session);
+      if (!allowed.includes(page)) return res.status(403).json({ error: `no access to page: ${page}` });
       next();
     } catch (err) {
-      console.error('[requireSectionApi] error:', err.message);
+      console.error('[requirePageApi] error:', err.message);
       res.status(500).json({ error: 'server error' });
     }
   };
@@ -220,6 +228,21 @@ function requireRolePage(...roles) {
     if (!req.session) return res.redirect('/login.html');
     if (!roles.includes(req.session.role)) return res.status(403).type('html').send('<h1>403 Forbidden</h1><p>Your role does not have access to this page.</p>');
     next();
+  };
+}
+// Gates one of the three scopable metrics pages' own HTML route.
+function requirePagePage(page) {
+  return async (req, res, next) => {
+    if (!req.session) return res.redirect('/login.html');
+    if (req.session.role === 'viewer') return res.status(403).type('html').send('<h1>403 Forbidden</h1><p>Your role does not have access to this page.</p>');
+    try {
+      const allowed = await getAllowedPages(req.session);
+      if (!allowed.includes(page)) return res.status(403).type('html').send('<h1>403 Forbidden</h1><p>You do not have access to this page.</p>');
+      next();
+    } catch (err) {
+      console.error('[requirePagePage] error:', err.message);
+      res.status(500).send('Server error');
+    }
   };
 }
 
@@ -303,8 +326,8 @@ app.post('/auth/logout', async (req, res) => {
 
 app.get('/auth/me', requireAuthApi, async (req, res) => {
   try {
-    const sections = await getAllowedSections(req.session);
-    res.json({ userId: req.session.userId, username: req.session.username, role: req.session.role, sections });
+    const pages = await getAllowedPages(req.session);
+    res.json({ userId: req.session.userId, username: req.session.username, role: req.session.role, pages });
   } catch (err) {
     console.error('[GET /auth/me] error:', err.message);
     res.status(500).json({ error: 'server error' });
@@ -315,7 +338,7 @@ app.get('/auth/me', requireAuthApi, async (req, res) => {
 // same app - see the page routes further down), so CORS isn't actually
 // needed for normal use. It's kept permissive for non-browser tools
 // (curl/Postman) that don't enforce CORS anyway; the real access control is
-// requireAuthApi/requireRoleApi/requireSectionApi below, not this header -
+// requireAuthApi/requireRoleApi/requirePageApi below, not this header -
 // CORS only affects whether a *browser* running someone else's JS can read
 // the response, not whether a request reaches the server at all.
 app.use('/api', (req, res, next) => {
@@ -363,11 +386,13 @@ function checkPayload(payload) {
   return { ok: true };
 }
 
-// Single-record CRUD by id is gated by the SECTION THE ROW ITSELF BELONGS
-// TO (derived from its type), checked against the caller's allowed
-// sections - not by a client-supplied section, which could just be a lie.
-// requireRoleApi keeps viewers out entirely (they only ever read saved
-// reports, never raw rows).
+// Single-record CRUD by id, gated by role only (requireRoleApi keeps
+// viewers out entirely). A raw event row isn't reliably attributable to one
+// of the three scopable pages the way a whole dashboard page is - an
+// 'enter'/'activity'/'exit' row could belong to any site at all, not just
+// the three that carry per-page scoping - so this stays a plain
+// super_admin/analyst power-user API rather than trying to force page-level
+// gating onto individual rows.
 
 app.get('/api/events/:id', requireRoleApi('super_admin', 'analyst'), async (req, res) => {
   const id = parseId(req, res);
@@ -380,11 +405,6 @@ app.get('/api/events/:id', requireRoleApi('super_admin', 'analyst'), async (req,
       [id]
     );
     if (!rows.length) return res.status(404).json({ error: 'not found' });
-
-    const allowed = await getAllowedSections(req.session);
-    if (!allowed.includes(sectionForEventType(rows[0].type))) {
-      return res.status(403).json({ error: 'no access to this event\'s section' });
-    }
     res.json(rows[0]);
   } catch (err) {
     console.error('[GET /api/events/:id] error:', err.message);
@@ -408,11 +428,6 @@ app.post('/api/events', requireRoleApi('super_admin', 'analyst'), async (req, re
   }
 
   try {
-    const allowed = await getAllowedSections(req.session);
-    if (!allowed.includes(sectionForEventType(body.type))) {
-      return res.status(403).json({ error: 'no access to this event\'s section' });
-    }
-
     const [result] = await dbPool.execute(
       `INSERT INTO events (session_id, type, url, ip, client_timestamp, payload)
        VALUES (?, ?, ?, ?, ?, ?)`,
@@ -451,12 +466,6 @@ app.put('/api/events/:id', requireRoleApi('super_admin', 'analyst'), async (req,
   try {
     const [existingRows] = await dbPool.query('SELECT type FROM events WHERE id = ?', [id]);
     if (!existingRows.length) return res.status(404).json({ error: 'not found' });
-
-    const allowed = await getAllowedSections(req.session);
-    const targetType = typeof body.type === 'string' ? body.type : existingRows[0].type;
-    if (!allowed.includes(sectionForEventType(existingRows[0].type)) || !allowed.includes(sectionForEventType(targetType))) {
-      return res.status(403).json({ error: 'no access to this event\'s section' });
-    }
 
     const fields = [];
     const params = [];
@@ -497,11 +506,6 @@ app.delete('/api/events/:id', requireRoleApi('super_admin', 'analyst'), async (r
     const [existingRows] = await dbPool.query('SELECT type FROM events WHERE id = ?', [id]);
     if (!existingRows.length) return res.status(404).json({ error: 'not found' });
 
-    const allowed = await getAllowedSections(req.session);
-    if (!allowed.includes(sectionForEventType(existingRows[0].type))) {
-      return res.status(403).json({ error: 'no access to this event\'s section' });
-    }
-
     const [result] = await dbPool.execute('DELETE FROM events WHERE id = ?', [id]);
     if (!result.affectedRows) return res.status(404).json({ error: 'not found' });
     res.sendStatus(204);
@@ -511,20 +515,21 @@ app.delete('/api/events/:id', requireRoleApi('super_admin', 'analyst'), async (r
   }
 });
 
-// --- Section-scoped reporting ---
+// --- Dashboard reporting ---
 //
-// These replace the old generic /api/events (list), /api/reports/summary,
-// and /api/reports/sessions endpoints. Each one is hardcoded to one
-// section's WHERE clause server-side (type = 'load' for performance,
-// type != 'load' for behavioral) and gated by requireSectionApi - there is
-// no generic "give me everything" list endpoint left that a
-// section-restricted analyst could fall back to as a bypass.
+// These back the main Dashboard, which every authenticated role can reach -
+// so they're gated by requireAuthApi (logged in at all), not by page scope.
+// Each is still hardcoded to one WHERE clause server-side (type = 'load'
+// for performance, type != 'load' for behavioral), replacing the old
+// generic /api/events (list), /api/reports/summary, and /api/reports/
+// sessions endpoints - there's no generic "give me everything" list
+// endpoint here at all.
 //
 // ?urlPrefix= still scopes to one site/page; the arbitrary ?metricPath=/
 // ?metricAgg= aggregation still works exactly as before, just applied
-// within whichever section's WHERE clause is already active - so a
-// behavioral-restricted analyst can aggregate any JSON path they want,
-// but only across behavioral-type rows, never across 'load' rows.
+// within whichever WHERE clause is already active - the behavioral summary
+// endpoint can aggregate any JSON path someone asks for, but only across
+// behavioral-type rows, never across 'load' rows.
 const ALLOWED_AGG = ['avg', 'sum', 'min', 'max', 'count'];
 const ALLOWED_GROUP_BY = ['type', 'session_id', 'url'];
 const JSON_PATH_RE = /^\$(\.[A-Za-z0-9_]+|\[\d+\])*$/; // e.g. $.vitals.lcp.value
@@ -567,7 +572,7 @@ async function runCustomMetric(whereSql, params, req, res) {
 
 // GET /api/performance/summary - averages across page-load (Web Vitals)
 // events only.
-app.get('/api/performance/summary', requireSectionApi('performance'), async (req, res) => {
+app.get('/api/performance/summary', requireAuthApi, async (req, res) => {
   const where = ["type = 'load'"];
   const params = [];
   const prefix = buildUrlPrefixClause(req);
@@ -599,7 +604,7 @@ app.get('/api/performance/summary', requireSectionApi('performance'), async (req
 
 // GET /api/performance/events - the load-event list (used for the load
 // time trend/histogram/table views).
-app.get('/api/performance/events', requireSectionApi('performance'), async (req, res) => {
+app.get('/api/performance/events', requireAuthApi, async (req, res) => {
   const where = ["type = 'load'"];
   const params = [];
   const prefix = buildUrlPrefixClause(req);
@@ -653,7 +658,7 @@ const SITE_COMPARISON_PER_RESOURCE_MS = 40;
 // 'load' rows still in the table from before that change (plus this
 // session's own manual testing) don't belong in a chart meant to compare
 // real tracked pages.
-app.get('/api/performance/page-comparison', requireSectionApi('performance'), async (req, res) => {
+app.get('/api/performance/page-comparison', requireAuthApi, async (req, res) => {
   try {
     const [rows] = await dbPool.query(`
       SELECT
@@ -709,7 +714,7 @@ app.get('/api/performance/page-comparison', requireSectionApi('performance'), as
 
 // GET /api/behavioral/summary - type breakdown + totals across everything
 // that isn't a page-load event.
-app.get('/api/behavioral/summary', requireSectionApi('behavioral'), async (req, res) => {
+app.get('/api/behavioral/summary', requireAuthApi, async (req, res) => {
   const where = ["type != 'load'"];
   const params = [];
   const prefix = buildUrlPrefixClause(req);
@@ -741,7 +746,7 @@ app.get('/api/behavioral/summary', requireSectionApi('behavioral'), async (req, 
 });
 
 // GET /api/behavioral/events - the general activity/recent-events list.
-app.get('/api/behavioral/events', requireSectionApi('behavioral'), async (req, res) => {
+app.get('/api/behavioral/events', requireAuthApi, async (req, res) => {
   const where = ["type != 'load'"];
   const params = [];
   if (typeof req.query.type === 'string') {
@@ -780,7 +785,7 @@ app.get('/api/behavioral/events', requireSectionApi('behavioral'), async (req, r
 // anonymizeOldIps() and are excluded here (nothing left to group them by),
 // and NAT/dynamic IPs mean this over- or under-counts "real" unique people
 // at the margins - it's the best available signal, not a guarantee.
-app.get('/api/behavioral/distinct-users', requireSectionApi('behavioral'), async (req, res) => {
+app.get('/api/behavioral/distinct-users', requireAuthApi, async (req, res) => {
   const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 500);
   try {
     // Longest/average session time need each session's own duration first
@@ -856,7 +861,7 @@ app.get('/api/behavioral/distinct-users', requireSectionApi('behavioral'), async
 // undercounts the dashboard's "Unique Sessions" stat (which counts any
 // session with a non-load event) by exactly however many sessions bounced
 // that fast - a real, observed gap, not a rounding artifact.
-app.get('/api/behavioral/visitor-types', requireSectionApi('behavioral'), async (req, res) => {
+app.get('/api/behavioral/visitor-types', requireAuthApi, async (req, res) => {
   try {
     const [[row]] = await dbPool.query(`
       SELECT
@@ -894,7 +899,7 @@ app.get('/api/behavioral/visitor-types', requireSectionApi('behavioral'), async 
 // has nothing to do with time. GROUP_CONCAT(... ORDER BY id DESC) then
 // SUBSTRING_INDEX(..., 1) is the standard MySQL idiom for "value from the
 // last row of the group" without a second join.
-app.get('/api/behavioral/top-sessions', requireSectionApi('behavioral'), async (req, res) => {
+app.get('/api/behavioral/top-sessions', requireAuthApi, async (req, res) => {
   const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 5, 1), 20);
   const orderCol = req.query.sortBy === 'recent' ? 'lastSeen' : 'durationSecs';
   const minSeconds = Math.max(parseInt(req.query.minSeconds, 10) || 0, 0);
@@ -994,7 +999,7 @@ app.get('/api/behavioral/top-sessions', requireSectionApi('behavioral'), async (
 // are capped at 50KB each and a session realistically sends at most a few
 // dozen flushes, so pulling and merging them in Node is cheap - no need
 // for a database-side array-concatenation trick for this data size.
-app.get('/api/behavioral/session-mouse/:sessionId', requireSectionApi('behavioral'), async (req, res) => {
+app.get('/api/behavioral/session-mouse/:sessionId', requireAuthApi, async (req, res) => {
   const sessionId = String(req.params.sessionId).slice(0, 64);
   // Optional ?url= scopes the replay to activity flushes recorded on that
   // one page - each 'activity' row already carries its own url column
@@ -1091,7 +1096,7 @@ function timingCoefficientOfVariation(moves) {
 
 const BOT_UA_RE = /bot|crawl|spider|slurp|headless|phantom|selenium|puppeteer|playwright|curl\/|wget\/|python-requests|scrapy|go-http-client|okhttp|facebookexternalhit|bingpreview|whatsapp|telegrambot/i;
 
-app.get('/api/behavioral/bot-score/:sessionId', requireSectionApi('behavioral'), async (req, res) => {
+app.get('/api/behavioral/bot-score/:sessionId', requireAuthApi, async (req, res) => {
   const sessionId = String(req.params.sessionId).slice(0, 64);
   try {
     const [loadRows] = await dbPool.query(
@@ -1216,7 +1221,7 @@ function computePageBreakdown(rows) {
   return pageTime;
 }
 
-app.get('/api/behavioral/site-sessions', requireSectionApi('behavioral'), async (req, res) => {
+app.get('/api/behavioral/site-sessions', requirePageApi('music'), async (req, res) => {
   const urlPrefix = typeof req.query.urlPrefix === 'string' ? req.query.urlPrefix : '';
   if (!urlPrefix) return res.status(400).json({ error: 'urlPrefix is required' });
   const minSeconds = Math.max(parseInt(req.query.minSeconds, 10) || 0, 0);
@@ -1310,9 +1315,20 @@ app.get('/api/behavioral/site-sessions', requireSectionApi('behavioral'), async 
 // Click counts here are a plain WHERE url = ? filter, not the
 // reconstruction - each 'activity' row already carries its own url
 // column (whichever page it was flushed from).
-app.get('/api/behavioral/page-visits', requireSectionApi('behavioral'), async (req, res) => {
+//
+// Shared by both About Me and Projects, so it can't be gated by a fixed
+// page like the other endpoints - the required scope is derived from the
+// url param itself against PAGE_SCOPE_BY_URL (a server-controlled lookup,
+// not a client-supplied scope name) so a request for one page's data can't
+// be waved through by claiming to be about the other.
+app.get('/api/behavioral/page-visits', requireAuthApi, async (req, res) => {
   const pageUrl = typeof req.query.url === 'string' ? req.query.url : '';
   if (!pageUrl) return res.status(400).json({ error: 'url is required' });
+  const requiredPage = PAGE_SCOPE_BY_URL[pageUrl];
+  if (!requiredPage) return res.status(400).json({ error: 'unrecognized url' });
+  if (req.session.role === 'viewer') return res.status(403).json({ error: `no access to page: ${requiredPage}` });
+  const allowedPages = await getAllowedPages(req.session);
+  if (!allowedPages.includes(requiredPage)) return res.status(403).json({ error: `no access to page: ${requiredPage}` });
   const normalizedTarget = normalizePageUrl(pageUrl);
   const minSeconds = Math.max(parseInt(req.query.minSeconds, 10) || 0, 0);
   const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 500);
@@ -1398,7 +1414,7 @@ app.get('/api/behavioral/page-visits', requireSectionApi('behavioral'), async (r
 // that isn't in that latest list (e.g. removed since, or its page_view
 // hasn't landed yet) still gets included - old click history doesn't just
 // disappear because the list changed.
-app.get('/api/behavioral/project-popularity', requireSectionApi('behavioral'), async (req, res) => {
+app.get('/api/behavioral/project-popularity', requirePageApi('projects'), async (req, res) => {
   try {
     const [[latestPageView]] = await dbPool.query(
       "SELECT payload FROM events WHERE type = 'project_page_view' ORDER BY id DESC LIMIT 1"
@@ -1432,7 +1448,7 @@ app.get('/api/behavioral/project-popularity', requireSectionApi('behavioral'), a
 // clicked at least one project, the ordered list of which projects (and
 // when) it clicked - the chronological click path per visitor, as opposed
 // to project-popularity's aggregate counts above.
-app.get('/api/behavioral/project-click-sequence', requireSectionApi('behavioral'), async (req, res) => {
+app.get('/api/behavioral/project-click-sequence', requirePageApi('projects'), async (req, res) => {
   const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 20, 1), 200);
   try {
     const [sessionRows] = await dbPool.query(
@@ -1493,125 +1509,144 @@ app.get('/api/behavioral/project-click-sequence', requireSectionApi('behavioral'
 
 // --- Saved reports ---
 //
-// "A viewer can only look at saved reports, which are just set views, even
-// if they are made static." A report is a named, section-scoped query
-// definition (kind + params) an analyst or super_admin defines once;
-// anyone with read access to it can view its result without needing raw
-// section access themselves. is_static freezes the result at save/refresh
-// time into `snapshot`; a non-static report re-runs its query live on
-// every view instead.
-const ALLOWED_KINDS_BY_SECTION = {
-  performance: ['summary', 'events'],
-  behavioral: ['summary', 'events', 'sessions']
-};
+// A report is now a PDF someone generated (and optionally marked up) from a
+// specific dashboard page, not a live query definition - reports.html shows
+// just a table of these; the query-builder UI that used to live there is
+// gone. Every report is tagged with the page it was generated from, and
+// visibility follows the same page-access rule the page itself uses:
+// super_admin sees everything, an analyst sees a report from a scoped page
+// (music/about-me/projects) only if they currently have that page's scope,
+// and Dashboard/Performance reports (no scoped page behind them) are
+// visible to any analyst. Viewers are the one exception - "a viewer can
+// only look at saved reports" was never qualified by section, so a viewer
+// still sees every report regardless of source page; they just can never
+// create one.
+const REPORT_SOURCE_PAGES = ['dashboard', 'performance', 'music', 'about-me', 'projects'];
 
-// Runs the same underlying query logic the live section endpoints use,
-// directly against dbPool (not via HTTP), so a saved report's section is
-// still enforced by which function gets called - never by trusting the
-// report row's own `section` column to already be correct end-to-end.
-async function runReportQuery(section, kind, params) {
-  const where = section === 'performance' ? ["type = 'load'"] : ["type != 'load'"];
-  const sqlParams = [];
-  if (typeof params.urlPrefix === 'string' && params.urlPrefix) {
-    where.push('url LIKE ?');
-    sqlParams.push(params.urlPrefix + '%');
-  }
-  const whereSql = 'WHERE ' + where.join(' AND ');
-
-  if (kind === 'summary') {
-    if (section === 'performance') {
-      const [[totals]] = await dbPool.query(
-        `SELECT COUNT(*) AS totalEvents, COUNT(DISTINCT session_id) AS uniqueSessions,
-                AVG(total_load_time_ms) AS avgLoadTimeMs, AVG(lcp_value) AS avgLcp,
-                AVG(cls_value) AS avgCls, AVG(inp_value) AS avgInp
-         FROM events ${whereSql}`,
-        sqlParams
-      );
-      return { totals };
-    }
-    const groupBy = ALLOWED_GROUP_BY.includes(params.groupBy) ? params.groupBy : 'type';
-    const [[totals]] = await dbPool.query(
-      `SELECT COUNT(*) AS totalEvents, COUNT(DISTINCT session_id) AS uniqueSessions FROM events ${whereSql}`,
-      sqlParams
-    );
-    const [byGroup] = await dbPool.query(
-      `SELECT ${groupBy} AS \`key\`, COUNT(*) AS count FROM events ${whereSql} GROUP BY ${groupBy} ORDER BY count DESC LIMIT 50`,
-      sqlParams
-    );
-    return { totals, groupBy, byGroup };
-  }
-
-  if (kind === 'events') {
-    const limit = Math.min(Math.max(parseInt(params.limit, 10) || 100, 1), 1000);
-    const columns = section === 'performance'
-      ? 'id, session_id, type, url, client_timestamp, server_timestamp, total_load_time_ms, lcp_value, cls_value, inp_value'
-      : 'id, session_id, type, url, client_timestamp, server_timestamp';
-    const [rows] = await dbPool.query(
-      `SELECT ${columns} FROM events ${whereSql} ORDER BY id DESC LIMIT ?`,
-      [...sqlParams, limit]
-    );
-    return rows;
-  }
-
-  if (kind === 'sessions') {
-    const limit = Math.min(Math.max(parseInt(params.limit, 10) || 50, 1), 500);
-    const [rows] = await dbPool.query(
-      `SELECT session_id,
-              MIN(COALESCE(client_timestamp, server_timestamp)) AS firstSeen,
-              MAX(COALESCE(client_timestamp, server_timestamp)) AS lastSeen,
-              TIMESTAMPDIFF(SECOND, MIN(COALESCE(client_timestamp, server_timestamp)), MAX(COALESCE(client_timestamp, server_timestamp))) AS durationSecs,
-              COUNT(*) AS eventCount, COUNT(DISTINCT url) AS pagesVisited,
-              MAX(CASE WHEN type = 'submit_click' THEN 1 ELSE 0 END) = 1 AS submitted
-       FROM events ${whereSql} AND session_id IS NOT NULL
-       GROUP BY session_id ORDER BY lastSeen DESC LIMIT ?`,
-      [...sqlParams, limit]
-    );
-    return rows;
-  }
-
-  throw new Error(`unknown report kind: ${kind}`);
+function requiredScopeForReportPage(sourcePage) {
+  return SCOPABLE_PAGES.includes(sourcePage) ? sourcePage : null; // dashboard/performance: no scope needed
 }
 
-function validateReportBody(body) {
-  if (typeof body.name !== 'string' || !body.name.trim()) return 'name is required';
-  if (!ALL_SECTIONS.includes(body.section)) return 'section must be one of: ' + ALL_SECTIONS.join(', ');
-  const allowedKinds = ALLOWED_KINDS_BY_SECTION[body.section] || [];
-  if (!allowedKinds.includes(body.kind)) return `kind must be one of: ${allowedKinds.join(', ')} for section ${body.section}`;
-  if (body.params !== undefined && (typeof body.params !== 'object' || body.params === null || Array.isArray(body.params))) {
-    return 'params must be a JSON object';
-  }
-  return null;
+async function canViewReport(session, sourcePage) {
+  if (!REPORT_SOURCE_PAGES.includes(sourcePage)) return false;
+  if (session.role === 'super_admin' || session.role === 'viewer') return true;
+  const required = requiredScopeForReportPage(sourcePage);
+  if (!required) return true;
+  const allowed = await getAllowedPages(session);
+  return allowed.includes(required);
 }
 
-// GET /api/saved-reports - list. Viewers see every report (it's their only
-// capability). Analysts/super_admins see reports in sections they can
-// access (super_admin = all).
-app.get('/api/saved-reports', async (req, res) => {
+async function canGenerateReport(session, sourcePage) {
+  if (!REPORT_SOURCE_PAGES.includes(sourcePage)) return false;
+  if (session.role === 'super_admin') return true;
+  if (session.role !== 'analyst') return false;
+  const required = requiredScopeForReportPage(sourcePage);
+  if (!required) return true;
+  const allowed = await getAllowedPages(session);
+  return allowed.includes(required);
+}
+
+// PDFs live on disk, not in MySQL - a DB row just holds where to find one
+// plus its metadata. file_name is always a server-generated random name
+// (never derived from the client-supplied report name), so nothing about
+// the request body can influence which path on disk gets written to or
+// read from.
+const REPORTS_DIR = path.join(__dirname, 'report-files');
+fs.mkdirSync(REPORTS_DIR, { recursive: true });
+
+// GET /api/reports - list every report this caller can see (see
+// canViewReport above for exactly who that is per role/page).
+app.get('/api/reports', async (req, res) => {
   try {
-    let rows;
-    if (req.session.role === 'viewer') {
-      [rows] = await dbPool.query(
-        'SELECT id, name, section, kind, is_static, created_by, created_at FROM saved_reports ORDER BY id DESC'
-      );
-    } else {
-      const allowed = await getAllowedSections(req.session);
-      if (!allowed.length) return res.json([]);
-      [rows] = await dbPool.query(
-        `SELECT id, name, section, kind, is_static, created_by, created_at FROM saved_reports
-         WHERE section IN (${allowed.map(() => '?').join(',')}) ORDER BY id DESC`,
-        allowed
-      );
-    }
-    res.json(rows);
+    const [rows] = await dbPool.query(
+      `SELECT r.id, r.name, r.notes, r.source_page AS sourcePage, r.created_at AS createdAt, u.username AS createdBy
+       FROM saved_reports r JOIN users u ON u.id = r.created_by
+       ORDER BY r.created_at DESC`
+    );
+    const checks = await Promise.all(rows.map((r) => canViewReport(req.session, r.sourcePage)));
+    res.json(rows.filter((_, i) => checks[i]));
   } catch (err) {
-    console.error('[GET /api/saved-reports] error:', err.message);
+    console.error('[GET /api/reports] error:', err.message);
     res.status(500).json({ error: 'database error' });
   }
 });
 
-// GET /api/saved-reports/:id - view one report's data: the frozen snapshot
-// if static, otherwise the live query result.
-app.get('/api/saved-reports/:id', async (req, res) => {
+// GET /api/reports/:id/file - streams the PDF itself (opened inline, not
+// forced as a download, so a click just opens it in the browser's own PDF
+// viewer).
+app.get('/api/reports/:id/file', async (req, res) => {
+  const id = parseId(req, res);
+  if (id === null) return;
+  try {
+    const [rows] = await dbPool.query('SELECT name, source_page AS sourcePage, file_name AS fileName FROM saved_reports WHERE id = ?', [id]);
+    if (!rows.length) return res.status(404).json({ error: 'not found' });
+    const report = rows[0];
+    if (!(await canViewReport(req.session, report.sourcePage))) {
+      return res.status(403).json({ error: 'no access to this report' });
+    }
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', 'inline; filename="' + report.name.replace(/[^\w.-]/g, '_').slice(0, 200) + '.pdf"');
+    res.sendFile(path.join(REPORTS_DIR, report.fileName), (err) => {
+      if (err && !res.headersSent) res.status(404).json({ error: 'report file missing' });
+    });
+  } catch (err) {
+    console.error('[GET /api/reports/:id/file] error:', err.message);
+    res.status(500).json({ error: 'database error' });
+  }
+});
+
+// POST /api/reports - save a newly generated (and possibly annotated) PDF.
+// Body carries the finished PDF as a base64 string, not a multipart upload
+// - it's already produced client-side (html2canvas + jsPDF), so this just
+// needs a JSON endpoint, not a new upload-handling dependency.
+app.post('/api/reports', requireRoleApi('super_admin', 'analyst'), async (req, res) => {
+  const body = req.body || {};
+  const name = typeof body.name === 'string' ? body.name.trim().slice(0, 255) : '';
+  const notes = typeof body.notes === 'string' ? body.notes.slice(0, 5000) : '';
+  const sourcePage = typeof body.sourcePage === 'string' ? body.sourcePage : '';
+  const pdfBase64 = typeof body.pdfBase64 === 'string' ? body.pdfBase64 : '';
+
+  if (!name) return res.status(400).json({ error: 'name is required' });
+  if (!REPORT_SOURCE_PAGES.includes(sourcePage)) return res.status(400).json({ error: 'sourcePage must be one of: ' + REPORT_SOURCE_PAGES.join(', ') });
+  if (!pdfBase64) return res.status(400).json({ error: 'pdfBase64 is required' });
+
+  if (!(await canGenerateReport(req.session, sourcePage))) {
+    return res.status(403).json({ error: 'no access to generate a report from this page' });
+  }
+
+  let buffer;
+  try {
+    buffer = Buffer.from(pdfBase64, 'base64');
+  } catch {
+    return res.status(400).json({ error: 'invalid pdfBase64' });
+  }
+  if (!buffer.length || buffer.length > 15 * 1024 * 1024) {
+    return res.status(413).json({ error: 'PDF must be non-empty and under 15MB' });
+  }
+  if (buffer.slice(0, 5).toString('latin1') !== '%PDF-') {
+    flagClient(req, 'invalid_report_upload', { reason: 'does not start with %PDF-', sizeBytes: buffer.length });
+    return res.status(400).json({ error: 'not a valid PDF' });
+  }
+
+  const fileName = crypto.randomBytes(16).toString('hex') + '.pdf';
+  try {
+    await fs.promises.writeFile(path.join(REPORTS_DIR, fileName), buffer);
+    const [result] = await dbPool.execute(
+      'INSERT INTO saved_reports (name, notes, source_page, file_name, created_by) VALUES (?, ?, ?, ?, ?)',
+      [name, notes, sourcePage, fileName, req.session.userId]
+    );
+    res.status(201).json({ id: result.insertId, name, notes, sourcePage, createdBy: req.session.username });
+  } catch (err) {
+    console.error('[POST /api/reports] error:', err.message);
+    res.status(500).json({ error: 'failed to save report' });
+  }
+});
+
+// DELETE /api/reports/:id - super_admin can delete any report; an analyst
+// only their own, and only from a page they still have access to generate
+// from (mirrors the old canManageReport rule, just re-keyed on page scope
+// instead of section).
+app.delete('/api/reports/:id', requireRoleApi('super_admin', 'analyst'), async (req, res) => {
   const id = parseId(req, res);
   if (id === null) return;
 
@@ -1620,121 +1655,15 @@ app.get('/api/saved-reports/:id', async (req, res) => {
     if (!rows.length) return res.status(404).json({ error: 'not found' });
     const report = rows[0];
 
-    if (req.session.role !== 'viewer') {
-      const allowed = await getAllowedSections(req.session);
-      if (!allowed.includes(report.section)) return res.status(403).json({ error: 'no access to this report\'s section' });
-    }
-
-    const data = report.is_static ? report.snapshot : await runReportQuery(report.section, report.kind, report.params || {});
-    res.json({
-      id: report.id,
-      name: report.name,
-      section: report.section,
-      kind: report.kind,
-      isStatic: !!report.is_static,
-      data
-    });
-  } catch (err) {
-    console.error('[GET /api/saved-reports/:id] error:', err.message);
-    res.status(500).json({ error: 'database error' });
-  }
-});
-
-// POST /api/saved-reports - create. Only super_admin/analyst, and an
-// analyst may only create a report in a section they themselves can access
-// - otherwise they could hand a viewer access to data they can't see.
-app.post('/api/saved-reports', requireRoleApi('super_admin', 'analyst'), async (req, res) => {
-  const body = req.body || {};
-  const validationError = validateReportBody(body);
-  if (validationError) return res.status(400).json({ error: validationError });
-
-  try {
-    const allowed = await getAllowedSections(req.session);
-    if (!allowed.includes(body.section)) return res.status(403).json({ error: 'no access to this section' });
-
-    const params = body.params || {};
-    const isStatic = !!body.isStatic;
-    const snapshot = isStatic ? JSON.stringify(await runReportQuery(body.section, body.kind, params)) : null;
-
-    const [result] = await dbPool.execute(
-      'INSERT INTO saved_reports (name, section, kind, params, is_static, snapshot, created_by) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      [body.name.trim().slice(0, 255), body.section, body.kind, JSON.stringify(params), isStatic ? 1 : 0, snapshot, req.session.userId]
-    );
-    const [rows] = await dbPool.query('SELECT id, name, section, kind, is_static, created_by, created_at FROM saved_reports WHERE id = ?', [result.insertId]);
-    res.status(201).json(rows[0]);
-  } catch (err) {
-    console.error('[POST /api/saved-reports] error:', err.message);
-    res.status(500).json({ error: 'database error' });
-  }
-});
-
-async function canManageReport(session, report) {
-  if (session.role === 'super_admin') return true;
-  if (session.role !== 'analyst') return false;
-  if (report.created_by !== session.userId) return false; // analysts manage their own reports only
-  const allowed = await getAllowedSections(session);
-  return allowed.includes(report.section);
-}
-
-// PUT /api/saved-reports/:id - update. Also how a static report gets
-// re-frozen: pass the same (or new) params with isStatic:true to re-run
-// and re-capture the snapshot on demand.
-app.put('/api/saved-reports/:id', requireRoleApi('super_admin', 'analyst'), async (req, res) => {
-  const id = parseId(req, res);
-  if (id === null) return;
-
-  try {
-    const [existing] = await dbPool.query('SELECT * FROM saved_reports WHERE id = ?', [id]);
-    if (!existing.length) return res.status(404).json({ error: 'not found' });
-    const report = existing[0];
-
-    if (!(await canManageReport(req.session, report))) {
-      return res.status(403).json({ error: 'you do not have permission to edit this report' });
-    }
-
-    const body = req.body || {};
-    const section = body.section !== undefined ? body.section : report.section;
-    const kind = body.kind !== undefined ? body.kind : report.kind;
-    const params = body.params !== undefined ? body.params : report.params;
-    const validationError = validateReportBody({ name: body.name !== undefined ? body.name : report.name, section, kind, params });
-    if (validationError) return res.status(400).json({ error: validationError });
-
-    if (section !== report.section) {
-      const allowed = await getAllowedSections(req.session);
-      if (!allowed.includes(section)) return res.status(403).json({ error: 'no access to that section' });
-    }
-
-    const isStatic = body.isStatic !== undefined ? !!body.isStatic : !!report.is_static;
-    const snapshot = isStatic ? JSON.stringify(await runReportQuery(section, kind, params)) : null;
-
-    await dbPool.execute(
-      'UPDATE saved_reports SET name = ?, section = ?, kind = ?, params = ?, is_static = ?, snapshot = ? WHERE id = ?',
-      [(body.name !== undefined ? body.name : report.name).trim().slice(0, 255), section, kind, JSON.stringify(params), isStatic ? 1 : 0, snapshot, id]
-    );
-    const [rows] = await dbPool.query('SELECT id, name, section, kind, is_static, created_by, created_at FROM saved_reports WHERE id = ?', [id]);
-    res.json(rows[0]);
-  } catch (err) {
-    console.error('[PUT /api/saved-reports/:id] error:', err.message);
-    res.status(500).json({ error: 'database error' });
-  }
-});
-
-app.delete('/api/saved-reports/:id', requireRoleApi('super_admin', 'analyst'), async (req, res) => {
-  const id = parseId(req, res);
-  if (id === null) return;
-
-  try {
-    const [existing] = await dbPool.query('SELECT * FROM saved_reports WHERE id = ?', [id]);
-    if (!existing.length) return res.status(404).json({ error: 'not found' });
-
-    if (!(await canManageReport(req.session, existing[0]))) {
-      return res.status(403).json({ error: 'you do not have permission to delete this report' });
-    }
+    const canManage = req.session.role === 'super_admin' ||
+      (report.created_by === req.session.userId && (await canGenerateReport(req.session, report.source_page)));
+    if (!canManage) return res.status(403).json({ error: 'you do not have permission to delete this report' });
 
     await dbPool.execute('DELETE FROM saved_reports WHERE id = ?', [id]);
+    await fs.promises.unlink(path.join(REPORTS_DIR, report.file_name)).catch(() => {});
     res.sendStatus(204);
   } catch (err) {
-    console.error('[DELETE /api/saved-reports/:id] error:', err.message);
+    console.error('[DELETE /api/reports/:id] error:', err.message);
     res.status(500).json({ error: 'database error' });
   }
 });
@@ -1761,24 +1690,24 @@ app.get('/api/flagged-clients', requireRoleApi('super_admin'), async (req, res) 
 // --- User management ---
 //
 // Full CRUD on the `users` table, super_admin only - "A super admin can do
-// anything, including managing users." Includes each analyst's section
-// scopes (empty array = unrestricted).
+// anything, including managing users." Includes each analyst's page scopes
+// (empty array = unrestricted, same convention the old section scopes used).
 
 async function getScopesByUser(userIds) {
   if (!userIds.length) return {};
   const [rows] = await dbPool.query(
-    `SELECT user_id, section FROM user_scopes WHERE user_id IN (${userIds.map(() => '?').join(',')})`,
+    `SELECT user_id, page FROM user_scopes WHERE user_id IN (${userIds.map(() => '?').join(',')})`,
     userIds
   );
   const out = {};
-  rows.forEach((r) => { (out[r.user_id] = out[r.user_id] || []).push(r.section); });
+  rows.forEach((r) => { (out[r.user_id] = out[r.user_id] || []).push(r.page); });
   return out;
 }
 
 function validateScopes(scopes) {
   if (scopes === undefined) return [];
   if (!Array.isArray(scopes)) return null;
-  if (!scopes.every((s) => ALL_SECTIONS.includes(s))) return null;
+  if (!scopes.every((s) => SCOPABLE_PAGES.includes(s))) return null;
   return scopes;
 }
 
@@ -1787,7 +1716,7 @@ async function setUserScopes(userId, scopes) {
   if (scopes.length) {
     const values = scopes.map(() => '(?, ?)').join(',');
     const params = scopes.flatMap((s) => [userId, s]);
-    await dbPool.execute(`INSERT INTO user_scopes (user_id, section) VALUES ${values}`, params);
+    await dbPool.execute(`INSERT INTO user_scopes (user_id, page) VALUES ${values}`, params);
   }
 }
 
@@ -1829,7 +1758,7 @@ app.post('/api/users', requireRoleApi('super_admin'), async (req, res) => {
     return res.status(400).json({ error: 'role must be one of: super_admin, analyst, viewer' });
   }
   const scopes = validateScopes(body.scopes);
-  if (scopes === null) return res.status(400).json({ error: 'scopes must be an array of: ' + ALL_SECTIONS.join(', ') });
+  if (scopes === null) return res.status(400).json({ error: 'scopes must be an array of: ' + SCOPABLE_PAGES.join(', ') });
 
   try {
     const hash = await bcrypt.hash(body.password, 10);
@@ -1872,7 +1801,7 @@ app.put('/api/users/:id', requireRoleApi('super_admin'), async (req, res) => {
   }
 
   const scopes = validateScopes(body.scopes);
-  if (scopes === null) return res.status(400).json({ error: 'scopes must be an array of: ' + ALL_SECTIONS.join(', ') });
+  if (scopes === null) return res.status(400).json({ error: 'scopes must be an array of: ' + SCOPABLE_PAGES.join(', ') });
 
   if (!fields.length && body.scopes === undefined) return res.status(400).json({ error: 'no updatable fields provided' });
 
@@ -1924,13 +1853,24 @@ app.delete('/api/users/:id', requireRoleApi('super_admin'), async (req, res) => 
 // public_html), so res.sendFile is the only way they're reachable.
 const PAGES_DIR = path.join(__dirname, 'pages');
 
+// report-generator.js is shared by every page with a "Generate Report"
+// button (Dashboard, Music/About Me/Projects metrics, Performance) - one
+// file, one static route, rather than duplicating the capture/annotate/
+// upload flow inline in five separate pages. It carries no sensitive data
+// itself (same reasoning as collector.js being public), so it isn't gated
+// behind requireAuthPage the way the pages that load it are.
+app.use('/assets', express.static(path.join(PAGES_DIR, 'assets')));
+
+// Dashboard and Reports are the baseline pages every authenticated role
+// (viewer included) can reach - so there's no longer a role-dependent
+// landing page to pick between; everyone lands on the Dashboard.
 app.get('/', (req, res) => {
   if (!req.session) return res.redirect('/login.html');
-  res.redirect(req.session.role === 'viewer' ? '/reports.html' : '/index.html');
+  res.redirect('/index.html');
 });
 
 app.get('/login.html', (req, res) => {
-  if (req.session) return res.redirect(req.session.role === 'viewer' ? '/reports.html' : '/index.html');
+  if (req.session) return res.redirect('/index.html');
   res.sendFile(path.join(PAGES_DIR, 'login.html'));
 });
 
@@ -1938,7 +1878,7 @@ app.get('/logout.html', (req, res) => {
   res.sendFile(path.join(PAGES_DIR, 'logout.html'));
 });
 
-app.get('/index.html', requireRolePage('super_admin', 'analyst'), (req, res) => {
+app.get('/index.html', requireAuthPage, (req, res) => {
   res.sendFile(path.join(PAGES_DIR, 'index.html'));
 });
 
@@ -1946,24 +1886,29 @@ app.get('/users.html', requireRolePage('super_admin'), (req, res) => {
   res.sendFile(path.join(PAGES_DIR, 'users.html'));
 });
 
+// Not linked from any nav under the current page model (it predates it) -
+// still reachable directly by anyone who could already reach it before,
+// left as-is rather than removed since nothing links to it to be wrong.
 app.get('/performance.html', requireRolePage('super_admin', 'analyst'), (req, res) => {
   res.sendFile(path.join(PAGES_DIR, 'performance.html'));
 });
 
-app.get('/music.html', requireRolePage('super_admin', 'analyst'), (req, res) => {
+app.get('/music.html', requirePagePage('music'), (req, res) => {
   res.sendFile(path.join(PAGES_DIR, 'music.html'));
 });
 
-app.get('/about-me.html', requireRolePage('super_admin', 'analyst'), (req, res) => {
+app.get('/about-me.html', requirePagePage('about-me'), (req, res) => {
   res.sendFile(path.join(PAGES_DIR, 'about-me.html'));
 });
 
-app.get('/projects.html', requireRolePage('super_admin', 'analyst'), (req, res) => {
+app.get('/projects.html', requirePagePage('projects'), (req, res) => {
   res.sendFile(path.join(PAGES_DIR, 'projects.html'));
 });
 
-// Reachable by all three roles: it's the viewer's only page, but analysts
-// and super_admins also use it to browse/create/manage saved reports.
+// Baseline page for all three roles, like the Dashboard - just a table of
+// saved reports now (see canViewReport for who sees which rows). Reports
+// themselves are generated from each individual metrics page's own
+// "Generate Report" button, not from anything on this page.
 app.get('/reports.html', requireAuthPage, (req, res) => {
   res.sendFile(path.join(PAGES_DIR, 'reports.html'));
 });

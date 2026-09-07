@@ -12,31 +12,19 @@
   header h1 { font-size: 1.3rem; margin: 0; }
   nav a { color: #0284c7; text-decoration: none; font-size: 0.88rem; margin-left: 1rem; font-weight: 600; }
   .card { background: #fff; border: 1px solid #dbe3ee; border-radius: 16px; padding: 1.5rem 1.75rem; margin-bottom: 1.5rem; }
-  .card h2 { font-size: 1rem; margin: 0 0 0.9rem; }
+  .card h2 { font-size: 1rem; margin: 0 0 0.4rem; }
+  .card > p.hint { color: #64748b; font-size: 0.82rem; margin: 0 0 1rem; }
 
-  .report-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.5rem; }
-  .report-item { display: flex; align-items: center; justify-content: space-between; gap: 0.8rem; padding: 0.7rem 0.9rem; border: 1px solid #dbe3ee; border-radius: 10px; cursor: pointer; }
-  .report-item:hover { background: #f5f9fc; }
-  .report-item.active { border-color: #0284c7; background: #eff6ff; }
-  .report-item .meta { font-size: 0.78rem; color: #64748b; }
-  .tag { display: inline-block; background: #f1f5f9; color: #334155; border-radius: 6px; padding: 0.1rem 0.5rem; font-size: 0.72rem; margin-right: 0.3rem; }
-  .tag.static { background: #fef3c7; color: #92400e; }
-
-  table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
-  th, td { text-align: left; padding: 0.5rem 0.6rem; border-bottom: 1px solid #eef2f7; }
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+  th, td { text-align: left; padding: 0.6rem 0.7rem; border-bottom: 1px solid #eef2f7; vertical-align: top; }
   th { color: #475569; font-weight: 600; }
-  .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.9rem; margin-bottom: 1rem; }
-  .stat { background: #f8fafc; border: 1px solid #eef2f7; border-radius: 12px; padding: 1rem; text-align: center; }
-  .stat .label { font-size: 0.72rem; color: #64748b; text-transform: uppercase; letter-spacing: 0.04em; }
-  .stat .value { font-size: 1.4rem; font-weight: 700; margin-top: 0.2rem; }
-
-  label { display: block; font-size: 0.83rem; font-weight: 600; color: #334155; margin: 0.7rem 0 0.25rem; }
-  input[type="text"], select { width: 100%; padding: 0.5rem 0.7rem; border: 1px solid #dbe3ee; border-radius: 7px; font-size: 0.88rem; box-sizing: border-box; }
-  .checkrow { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.6rem; }
-  .btn { display: inline-block; border: none; border-radius: 8px; padding: 0.6rem 1.1rem; background: #0284c7; color: #fff; font-weight: 600; text-decoration: none; font-size: 0.86rem; cursor: pointer; margin-top: 1rem; }
+  .tag { display: inline-block; background: #f1f5f9; color: #334155; border-radius: 6px; padding: 0.1rem 0.5rem; font-size: 0.74rem; }
+  .notes { color: #64748b; max-width: 260px; white-space: pre-wrap; }
+  .btn { display: inline-block; border: none; border-radius: 7px; padding: 0.4rem 0.8rem; background: #0284c7; color: #fff; font-weight: 600; text-decoration: none; font-size: 0.8rem; cursor: pointer; }
   .btn:hover { background: #0369a1; }
-  .btn-delete { background: #fee2e2; color: #b91c1c; border: none; border-radius: 6px; padding: 0.35rem 0.7rem; font-size: 0.78rem; font-weight: 600; cursor: pointer; }
-  .err { background: #fef2f2; border: 1px solid #fecaca; color: #b91c1c; border-radius: 8px; padding: 0.5rem 0.7rem; font-size: 0.82rem; margin-top: 0.8rem; display: none; }
+  .btn-delete { background: #fee2e2; color: #b91c1c; border: none; border-radius: 6px; padding: 0.35rem 0.7rem; font-size: 0.78rem; font-weight: 600; cursor: pointer; margin-left: 0.4rem; }
+  .actions { white-space: nowrap; }
   .empty { color: #94a3b8; font-size: 0.85rem; font-style: italic; }
 </style>
 </head>
@@ -45,52 +33,15 @@
   <header>
     <h1>Reports</h1>
     <nav id="mainNav">
+      <a href="/index.html">&larr; Dashboard</a>
       <a href="#" id="logoutLink">Log out</a>
     </nav>
   </header>
 
   <div class="card">
-    <h2>Detailed Performance Report</h2>
-    <p style="color:#64748b;font-size:0.85rem;margin:0 0 0.9rem">Web Vitals thresholds, a load-time distribution histogram, and a plain-language read of whether the site is loading fast enough.</p>
-    <a class="btn" href="/performance.html">Open Detailed Performance Report &rarr;</a>
-  </div>
-
-  <div class="card">
-    <h2>Saved &amp; Ad-Hoc Reports</h2>
-    <ul class="report-list" id="reportList"></ul>
-  </div>
-
-  <div class="card" id="viewerCard" style="display:none">
-    <h2 id="viewerTitle">Report</h2>
-    <div id="viewerBody"></div>
-  </div>
-
-  <div class="card" id="createCard" style="display:none">
-    <h2>Define a New Report</h2>
-    <form id="reportForm">
-      <label for="rName">Name</label>
-      <input type="text" id="rName" required>
-
-      <label for="rSection">Section</label>
-      <select id="rSection"></select>
-
-      <label for="rKind">Kind</label>
-      <select id="rKind"></select>
-
-      <label for="rUrlPrefix">URL prefix (optional)</label>
-      <input type="text" id="rUrlPrefix" placeholder="https://shekarkrishnamoorthy.com/">
-
-      <label for="rLimit">Row limit (for events/sessions)</label>
-      <input type="text" id="rLimit" placeholder="100">
-
-      <div class="checkrow">
-        <input type="checkbox" id="rStatic">
-        <label for="rStatic" style="margin:0">Make static (freeze the current result as a snapshot instead of re-running live)</label>
-      </div>
-
-      <div class="err" id="formErr"></div>
-      <button type="submit" class="btn">Save Report</button>
-    </form>
+    <h2>Saved Reports</h2>
+    <p class="hint">Generated from each metrics page's own "Generate Report" button - a snapshot PDF, with any markup and notes added at the time.</p>
+    <div class="table-wrap" id="reportsWrap"><p class="empty">Loading...</p></div>
   </div>
 </main>
 
@@ -98,166 +49,60 @@
 (function () {
   "use strict";
   var me = null;
-  var reports = [];
-  var activeId = null;
 
-  var KINDS_BY_SECTION = { performance: ["summary", "events"], behavioral: ["summary", "events", "sessions"] };
+  var PAGE_LABELS = {
+    dashboard: "Dashboard",
+    performance: "Performance",
+    music: "Music Site Metrics",
+    "about-me": "About Me Metrics",
+    projects: "Projects Metrics"
+  };
 
   function esc(s) { return String(s).replace(/</g, "&lt;"); }
+  function fmtDate(s) {
+    var d = new Date(s);
+    if (isNaN(d.getTime())) return "—";
+    return d.toLocaleString(undefined, { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" });
+  }
 
-  function canManage(report) {
+  function canDelete(r) {
     if (!me) return false;
     if (me.role === "super_admin") return true;
     if (me.role !== "analyst") return false;
-    return report.created_by === me.userId && me.sections.indexOf(report.section) !== -1;
+    return r.createdBy === me.username;
   }
 
   function loadReports() {
-    fetch("/api/saved-reports").then(function (r) { return r.json(); }).then(function (data) {
-      reports = data;
-      renderList();
-    });
-  }
-
-  function renderList() {
-    var list = document.getElementById("reportList");
-    if (!reports.length) {
-      list.innerHTML = '<li class="empty">No saved reports yet.</li>';
-      return;
-    }
-    list.innerHTML = reports.map(function (r) {
-      return '<li class="report-item' + (r.id === activeId ? " active" : "") + '" data-id="' + r.id + '">' +
-        '<div><strong>' + esc(r.name) + '</strong><div class="meta">' +
-          '<span class="tag">' + r.section + '</span><span class="tag">' + r.kind + '</span>' +
-          (r.is_static ? '<span class="tag static">static</span>' : '<span class="tag">live</span>') +
-        '</div></div>' +
-        (canManage(r) ? '<button class="btn-delete" data-delete="' + r.id + '">Delete</button>' : '') +
-      '</li>';
-    }).join("");
-
-    Array.prototype.forEach.call(list.querySelectorAll(".report-item"), function (el) {
-      el.addEventListener("click", function (e) {
-        if (e.target.dataset.delete) return;
-        viewReport(Number(el.dataset.id));
-      });
-    });
-    Array.prototype.forEach.call(list.querySelectorAll("[data-delete]"), function (btn) {
-      btn.addEventListener("click", function (e) {
-        e.stopPropagation();
-        deleteReport(Number(btn.dataset.delete));
-      });
-    });
-  }
-
-  function renderGenericTable(rows) {
-    if (!rows || !rows.length) return '<p class="empty">No rows.</p>';
-    var cols = Object.keys(rows[0]);
-    var head = "<tr>" + cols.map(function (c) { return "<th>" + esc(c) + "</th>"; }).join("") + "</tr>";
-    var body = rows.map(function (row) {
-      return "<tr>" + cols.map(function (c) {
-        var v = row[c];
-        if (v === null || v === undefined) return "<td>—</td>";
-        if (typeof v === "boolean") return "<td>" + (v ? "✅" : "—") + "</td>";
-        return "<td>" + esc(v) + "</td>";
-      }).join("") + "</tr>";
-    }).join("");
-    return "<table><thead>" + head + "</thead><tbody>" + body + "</tbody></table>";
-  }
-
-  function renderSummary(data) {
-    var t = data.totals || {};
-    var html = '<div class="stat-grid">' + Object.keys(t).map(function (k) {
-      var v = t[k];
-      return '<div class="stat"><div class="label">' + esc(k) + '</div><div class="value">' +
-        (v === null || v === undefined ? "—" : (typeof v === "number" ? Math.round(v * 100) / 100 : esc(v))) +
-        '</div></div>';
-    }).join("") + "</div>";
-    if (data.byGroup) html += renderGenericTable(data.byGroup);
-    if (data.customMetric) html += "<p><strong>" + esc(data.customMetric.path) + "</strong> (" + data.customMetric.agg + "): " + data.customMetric.value + "</p>";
-    return html;
-  }
-
-  function viewReport(id) {
-    activeId = id;
-    renderList();
-    fetch("/api/saved-reports/" + id).then(function (r) {
-      return r.json().then(function (body) { return { ok: r.ok, body: body }; });
-    }).then(function (res) {
-      var card = document.getElementById("viewerCard");
-      card.style.display = "block";
-      if (!res.ok) {
-        document.getElementById("viewerTitle").textContent = "Error";
-        document.getElementById("viewerBody").innerHTML = '<p class="empty">' + esc(res.body.error || "Failed to load report.") + '</p>';
+    fetch("/api/reports").then(function (r) { return r.json(); }).then(function (rows) {
+      var wrap = document.getElementById("reportsWrap");
+      if (!rows.length) {
+        wrap.innerHTML = '<p class="empty">No saved reports yet.</p>';
         return;
       }
-      var report = res.body;
-      document.getElementById("viewerTitle").textContent = report.name + (report.isStatic ? " (static snapshot)" : " (live)");
-      document.getElementById("viewerBody").innerHTML =
-        report.kind === "summary" ? renderSummary(report.data) : renderGenericTable(report.data);
-    });
-  }
+      var head = "<tr><th>Name</th><th>Page</th><th>Notes</th><th>Created By</th><th>Created At</th><th></th></tr>";
+      var body = rows.map(function (r) {
+        return "<tr>" +
+          "<td>" + esc(r.name) + "</td>" +
+          "<td><span class='tag'>" + esc(PAGE_LABELS[r.sourcePage] || r.sourcePage) + "</span></td>" +
+          "<td class='notes'>" + esc(r.notes || "") + "</td>" +
+          "<td>" + esc(r.createdBy) + "</td>" +
+          "<td>" + fmtDate(r.createdAt) + "</td>" +
+          "<td class='actions'>" +
+            "<a class='btn' href='/api/reports/" + r.id + "/file' target='_blank' rel='noopener'>View PDF</a>" +
+            (canDelete(r) ? "<button class='btn-delete' data-delete='" + r.id + "'>Delete</button>" : "") +
+          "</td>" +
+        "</tr>";
+      }).join("");
+      wrap.innerHTML = "<table><thead>" + head + "</thead><tbody>" + body + "</tbody></table>";
 
-  function deleteReport(id) {
-    if (!window.confirm("Delete this report? This cannot be undone.")) return;
-    fetch("/api/saved-reports/" + id, { method: "DELETE" }).then(function (r) {
-      if (r.status === 204) {
-        if (activeId === id) { activeId = null; document.getElementById("viewerCard").style.display = "none"; }
-        loadReports();
-        return;
-      }
-      return r.json().then(function (body) { alert(body.error || "Delete failed."); });
-    });
-  }
-
-  function updateKindOptions() {
-    var section = document.getElementById("rSection").value;
-    var kindSel = document.getElementById("rKind");
-    kindSel.innerHTML = (KINDS_BY_SECTION[section] || []).map(function (k) {
-      return "<option value='" + k + "'>" + k + "</option>";
-    }).join("");
-  }
-
-  function initCreateForm() {
-    if (!me || me.role === "viewer" || !me.sections.length) return;
-    document.getElementById("createCard").style.display = "block";
-    document.getElementById("rSection").innerHTML = me.sections.map(function (s) {
-      return "<option value='" + s + "'>" + s + "</option>";
-    }).join("");
-    updateKindOptions();
-    document.getElementById("rSection").addEventListener("change", updateKindOptions);
-
-    document.getElementById("reportForm").addEventListener("submit", function (e) {
-      e.preventDefault();
-      var params = {};
-      var urlPrefix = document.getElementById("rUrlPrefix").value.trim();
-      var limit = document.getElementById("rLimit").value.trim();
-      if (urlPrefix) params.urlPrefix = urlPrefix;
-      if (limit) params.limit = Number(limit);
-
-      var body = {
-        name: document.getElementById("rName").value,
-        section: document.getElementById("rSection").value,
-        kind: document.getElementById("rKind").value,
-        params: params,
-        isStatic: document.getElementById("rStatic").checked
-      };
-
-      fetch("/api/saved-reports", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body)
-      }).then(function (r) {
-        return r.json().then(function (data) { return { ok: r.ok, data: data }; });
-      }).then(function (res) {
-        var errBox = document.getElementById("formErr");
-        if (!res.ok) {
-          errBox.textContent = res.data.error || "Save failed.";
-          errBox.style.display = "block";
-          return;
-        }
-        errBox.style.display = "none";
-        document.getElementById("reportForm").reset();
-        loadReports();
+      Array.prototype.forEach.call(wrap.querySelectorAll("[data-delete]"), function (btn) {
+        btn.addEventListener("click", function () {
+          if (!window.confirm("Delete this report? This cannot be undone.")) return;
+          fetch("/api/reports/" + btn.dataset.delete, { method: "DELETE" }).then(function (r) {
+            if (r.status === 204) { loadReports(); return; }
+            return r.json().then(function (body) { window.alert(body.error || "Delete failed."); });
+          });
+        });
       });
     });
   }
@@ -265,15 +110,13 @@
   fetch("/auth/me").then(function (r) { return r.json(); }).then(function (data) {
     me = data;
     var nav = document.getElementById("mainNav");
-    var links = "";
-    if (me.role !== "viewer") links += '<a href="/index.html">&larr; Dashboard</a>';
+    var links = '<a href="/index.html">&larr; Dashboard</a>';
     if (me.role === "super_admin") links += '<a href="/users.html">User Management</a>';
     nav.innerHTML = links + '<a href="#" id="logoutLink">Log out</a>';
     document.getElementById("logoutLink").addEventListener("click", function (e) {
       e.preventDefault();
       fetch("/auth/logout", { method: "POST" }).then(function () { window.location.href = "/logout.html"; });
     });
-    initCreateForm();
     loadReports();
   });
 })();

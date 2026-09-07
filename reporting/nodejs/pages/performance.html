@@ -35,6 +35,8 @@
   th { color: #475569; font-weight: 600; }
 
   a.back { color: #0284c7; display: inline-block; margin-top: 0.5rem; }
+  .btn { display: inline-block; border: none; border-radius: 8px; padding: 0.6rem 1.2rem; background: #0284c7; color: #fff; font-weight: 600; text-decoration: none; font-size: 0.88rem; cursor: pointer; }
+  .btn:hover { background: #0369a1; }
 </style>
 </head>
 <body>
@@ -51,6 +53,8 @@
       <a href="#" id="logoutLink">Log out</a>
     </nav>
   </header>
+
+  <button class="btn" id="generateReportBtn" style="margin-bottom:1.5rem">Generate Report</button>
 
   <div class="question">
     Guiding question: Is the site loading fast enough, and are Core Web Vitals in a healthy range?
@@ -186,6 +190,10 @@
     }).join("");
   });
 })();
+</script>
+<script src="/assets/report-generator.js"></script>
+<script>
+  window.ReportGenerator.init({ buttonId: "generateReportBtn", captureSelector: "main", sourcePage: "performance" });
 </script>
 </body>
 </html>

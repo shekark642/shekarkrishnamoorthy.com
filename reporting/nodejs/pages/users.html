@@ -60,7 +60,7 @@
   <div class="card">
     <button class="btn-primary" id="createBtn">+ New User</button>
     <table>
-      <thead><tr><th>Username</th><th>Role</th><th>Sections</th><th>Created</th><th>Actions</th></tr></thead>
+      <thead><tr><th>Username</th><th>Role</th><th>Pages</th><th>Created</th><th>Actions</th></tr></thead>
       <tbody id="userRows"></tbody>
     </table>
   </div>
@@ -78,13 +78,14 @@
       <label for="role">Role</label>
       <select id="role">
         <option value="super_admin">Super Admin — full access, manages users</option>
-        <option value="analyst" selected>Analyst — full access by default, can be scoped to sections</option>
-        <option value="viewer">Viewer — saved reports only</option>
+        <option value="analyst" selected>Analyst — full access by default, can be scoped to specific pages</option>
+        <option value="viewer">Viewer — basic navbar only (Dashboard, Reports)</option>
       </select>
       <div id="scopeRow">
-        <p class="hint">Leave both unchecked for an unrestricted analyst (default: everything). Check one or more to restrict this analyst to only those sections.</p>
-        <div class="checkrow"><input type="checkbox" id="scopePerformance" value="performance"><label for="scopePerformance" style="margin:0">Performance</label></div>
-        <div class="checkrow"><input type="checkbox" id="scopeBehavioral" value="behavioral"><label for="scopeBehavioral" style="margin:0">Behavioral</label></div>
+        <p class="hint">Leave all unchecked for an unrestricted analyst (default: every metrics page). Check one or more to restrict this analyst to only those pages. Dashboard and Reports are always available to any analyst regardless of these checkboxes.</p>
+        <div class="checkrow"><input type="checkbox" id="scopeMusic" value="music"><label for="scopeMusic" style="margin:0">Music Site Metrics</label></div>
+        <div class="checkrow"><input type="checkbox" id="scopeAboutMe" value="about-me"><label for="scopeAboutMe" style="margin:0">About Me Metrics</label></div>
+        <div class="checkrow"><input type="checkbox" id="scopeProjects" value="projects"><label for="scopeProjects" style="margin:0">Projects Metrics</label></div>
       </div>
       <div class="err" id="formErr"></div>
       <div class="actions">
@@ -162,8 +163,9 @@
     document.getElementById("userId").value = user.id;
     document.getElementById("username").value = user.username;
     document.getElementById("role").value = user.role;
-    document.getElementById("scopePerformance").checked = user.scopes.indexOf("performance") !== -1;
-    document.getElementById("scopeBehavioral").checked = user.scopes.indexOf("behavioral") !== -1;
+    document.getElementById("scopeMusic").checked = user.scopes.indexOf("music") !== -1;
+    document.getElementById("scopeAboutMe").checked = user.scopes.indexOf("about-me") !== -1;
+    document.getElementById("scopeProjects").checked = user.scopes.indexOf("projects") !== -1;
     document.getElementById("passwordLabel").textContent = "New Password (leave blank to keep current)";
     document.getElementById("password").required = false;
     updateScopeVisibility();
@@ -186,8 +188,9 @@
     var role = document.getElementById("role").value;
     var scopes = [];
     if (role === "analyst") {
-      if (document.getElementById("scopePerformance").checked) scopes.push("performance");
-      if (document.getElementById("scopeBehavioral").checked) scopes.push("behavioral");
+      if (document.getElementById("scopeMusic").checked) scopes.push("music");
+      if (document.getElementById("scopeAboutMe").checked) scopes.push("about-me");
+      if (document.getElementById("scopeProjects").checked) scopes.push("projects");
     }
     var body = {
       username: document.getElementById("username").value,

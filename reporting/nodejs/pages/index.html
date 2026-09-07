@@ -62,14 +62,16 @@
       <p>Welcome back, <strong id="welcomeName">...</strong> (<span id="welcomeRole"></span>).</p>
     </div>
     <nav>
-      <a href="/music.html">Music Site Metrics</a>
-      <a href="/about-me.html">About Me Metrics</a>
-      <a href="/projects.html">Projects Metrics</a>
+      <a href="/music.html" id="navMusic" style="display:none">Music Site Metrics</a>
+      <a href="/about-me.html" id="navAboutMe" style="display:none">About Me Metrics</a>
+      <a href="/projects.html" id="navProjects" style="display:none">Projects Metrics</a>
       <a href="/reports.html">Reports</a>
       <a href="#" id="adminLink" style="display:none">User Management</a>
       <a href="#" id="logoutLink">Log out</a>
     </nav>
   </header>
+
+  <button class="btn" id="generateReportBtn" style="display:none;margin-bottom:1.5rem">Generate Report</button>
 
   <div class="top-row">
     <div class="card pie-card">
@@ -166,6 +168,13 @@
       link.href = "/users.html";
       loadFlaggedClients();
     }
+    // Music/About Me/Projects nav links only show for pages this user is
+    // actually allowed to reach - viewers get none (pages: []), an analyst
+    // gets whatever their scope includes.
+    if (me.pages.indexOf("music") !== -1) document.getElementById("navMusic").style.display = "inline";
+    if (me.pages.indexOf("about-me") !== -1) document.getElementById("navAboutMe").style.display = "inline";
+    if (me.pages.indexOf("projects") !== -1) document.getElementById("navProjects").style.display = "inline";
+    if (me.role !== "viewer") document.getElementById("generateReportBtn").style.display = "inline-block";
   });
 
   document.getElementById("logoutLink").addEventListener("click", function (e) {
@@ -472,6 +481,10 @@
     });
   }, function () { noAccess("visitorTypeWrap", "behavioral"); });
 })();
+</script>
+<script src="/assets/report-generator.js"></script>
+<script>
+  window.ReportGenerator.init({ buttonId: "generateReportBtn", captureSelector: "main", sourcePage: "dashboard" });
 </script>
 </body>
 </html>
