@@ -31,11 +31,6 @@
   .empty { color: #94a3b8; font-size: 0.85rem; font-style: italic; }
   .table-wrap { overflow-x: auto; }
   td.num { text-align: right; }
-  .tag { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; padding: 0.1rem 0.5rem; border-radius: 999px; }
-  .tag.good { background: #dcfce7; color: #15803d; }
-  .tag.needsImprovement { background: #fef3c7; color: #92400e; }
-  .tag.poor { background: #fee2e2; color: #b91c1c; }
-  .tag.unknown { background: #e2e8f0; color: #475569; }
 
   table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
   th, td { text-align: left; padding: 0.5rem 0.6rem; border-bottom: 1px solid #eef2f7; }
@@ -93,9 +88,6 @@
     <h2>Actual vs. Expected Load Time by Page</h2>
     <p style="margin:-0.4rem 0 0.9rem;color:#64748b;font-size:0.82rem">Average real load time per tracked page, next to an estimated baseline for a basic machine/connection based on how many resources that page actually fetches. Pages are discovered automatically - a newly tracked page just starts showing up here.</p>
     <div id="siteComparisonWrap"><canvas id="siteComparisonChart"></canvas></div>
-    <h2 style="margin-top:1.6rem">20 Longest Load Events</h2>
-    <p style="margin:-0.4rem 0 0.9rem;color:#64748b;font-size:0.82rem">The averages above can hide a single very slow visit - these are the actual individual events, worst first.</p>
-    <div class="table-wrap" id="slowestWrap"><p class="empty">Loading...</p></div>
   </div>
 
   <div class="card">
@@ -103,7 +95,7 @@
     <p style="margin:-0.4rem 0 0.9rem;color:#64748b;font-size:0.82rem">Every visitor gets a permanent, sequential "User N" the first time their IP is seen (User 1, User 2, ...) - a stable pseudonym so the rest of the dashboard doesn't have to keep showing raw IPs. IPs older than the retention window are anonymized (the number itself is kept, just no longer linkable to a new visit) and excluded here.</p>
     <div id="distinctUsersWrap">
       <table>
-        <thead><tr><th>User</th><th>IP</th><th>Sessions</th><th>First Seen</th><th>Last Seen</th></tr></thead>
+        <thead><tr><th>User</th><th>IP</th><th>Sessions</th><th>Longest Session</th><th>Avg. Session</th><th>First Seen</th><th>Last Seen</th></tr></thead>
         <tbody id="distinctUserRows"></tbody>
       </table>
     </div>
@@ -124,18 +116,6 @@
     <h2>Top 5 Most Recent Sessions Above 5s (behavioral)</h2>
     <p style="margin:-0.4rem 0 0.9rem;color:#64748b;font-size:0.82rem">Device, activity totals, exit page (where they were when the session ended), and a mouse-movement replay for each. Excludes sessions under 5 seconds - too short for anything here to be meaningful.</p>
     <div class="session-grid" id="recentSessionGrid"></div>
-  </div>
-
-  <div class="card">
-    <h2>Sessions (behavioral)</h2>
-    <p style="margin:-0.4rem 0 0.9rem;color:#64748b;font-size:0.82rem">Who and when - every session's scattered behavioral events (enter/activity/exit/submit_click) cross-referenced into one row per visitor.</p>
-    <div id="sessionsWrap">
-      <table>
-        <thead><tr><th>Session</th><th>User</th><th>IP</th><th>First Seen</th><th>Last Seen</th></tr></thead>
-        <tbody id="sessionRows"></tbody>
-      </table>
-    </div>
-    <button class="btn secondary" id="sessionsExtendBtn" style="margin-top:0.9rem">Show up to 100 rows</button>
   </div>
 </main>
 
@@ -302,39 +282,6 @@
     });
   }, function () { noAccess("siteComparisonWrap", "performance"); });
 
-  // --- 20 Longest Load Events ---
-  //
-  // Same scoring thresholds performance.html's detailed report uses, so a
-  // "Good"/"Needs Improvement"/"Poor" tag here means exactly what it means
-  // there - not a second, silently different scale.
-  var LOAD_TIME_THRESHOLDS = [1000, 3000];
-  function loadTimeScore(ms) {
-    if (ms === null || ms === undefined) return "unknown";
-    if (ms <= LOAD_TIME_THRESHOLDS[0]) return "good";
-    if (ms <= LOAD_TIME_THRESHOLDS[1]) return "needsImprovement";
-    return "poor";
-  }
-  function scoreLabel(s) {
-    return s === "needsImprovement" ? "Needs Improvement" : s.charAt(0).toUpperCase() + s.slice(1);
-  }
-  fetchScoped("/api/performance/slowest-events?limit=20", function (rows) {
-    if (!rows.length) {
-      document.getElementById("slowestWrap").innerHTML = '<p class="empty">No load events recorded yet.</p>';
-      return;
-    }
-    var head = "<tr><th>Session</th><th>User</th><th>Page</th><th>Load Time</th><th>Score</th></tr>";
-    var body = rows.map(function (r) {
-      var s = loadTimeScore(r.totalLoadTimeMs);
-      return "<tr><td class='mono'>" + esc(r.session_id.slice(0, 12)) + "</td>" +
-        "<td>" + fmtUser(r.userNumber) + "</td>" +
-        "<td class='mono'>" + esc((r.url || "").replace(/^https?:\/\//, "")) + "</td>" +
-        "<td class='num'>" + r.totalLoadTimeMs + " ms</td>" +
-        "<td><span class='tag " + s + "'>" + scoreLabel(s) + "</span></td></tr>";
-    }).join("");
-    document.getElementById("slowestWrap").innerHTML = "<table><thead>" + head + "</thead><tbody>" + body + "</tbody></table>";
-  }, function () { noAccess("slowestWrap", "performance"); });
-
-  // --- Sessions (cross-referenced - one row per session, not per event) ---
   function fmtDuration(secs) {
     if (secs === null || secs === undefined) return "—";
     if (secs < 60) return secs + "s";
@@ -351,38 +298,17 @@
   }
   function fmtUser(userNumber) { return userNumber ? "User " + userNumber : "—"; }
 
-  function loadSessions(limit) {
-    fetchScoped("/api/behavioral/sessions?limit=" + limit, function (rows) {
-      document.getElementById("sessionRows").innerHTML = rows.map(function (r) {
-        return "<tr><td class='mono'>" + r.session_id.slice(0, 12) + "</td>" +
-          "<td>" + fmtUser(r.userNumber) + "</td>" +
-          "<td class='mono'>" + esc(r.ip || "—") + "</td>" +
-          "<td class='mono'>" + fmtDateTime(r.firstSeen) + "</td>" +
-          "<td class='mono'>" + fmtDateTime(r.lastSeen) + "</td></tr>";
-      }).join("");
-    }, function () {
-      noAccess("sessionsWrap", "behavioral");
-      document.getElementById("sessionsExtendBtn").style.display = "none";
-    });
-  }
-  loadSessions(20);
-
-  var sessionsExpanded = false;
-  document.getElementById("sessionsExtendBtn").addEventListener("click", function () {
-    sessionsExpanded = !sessionsExpanded;
-    loadSessions(sessionsExpanded ? 100 : 20);
-    this.textContent = sessionsExpanded ? "Show fewer rows" : "Show up to 100 rows";
-  });
-
   // --- Distinct Users (IP-based identity proxy, sessions per user) ---
   fetchScoped("/api/behavioral/distinct-users?limit=20", function (rows) {
     document.getElementById("distinctUserRows").innerHTML = rows.length
       ? rows.map(function (r) {
           return "<tr><td>" + fmtUser(r.userNumber) + "</td><td class='mono'>" + esc(r.ip) + "</td><td>" + r.sessionCount + "</td>" +
+            "<td>" + fmtDuration(r.longestSessionSecs) + "</td>" +
+            "<td>" + fmtDuration(r.avgSessionSecs === null ? null : Math.round(r.avgSessionSecs)) + "</td>" +
             "<td class='mono'>" + fmtDateTime(r.firstSeen) + "</td>" +
             "<td class='mono'>" + fmtDateTime(r.lastSeen) + "</td></tr>";
         }).join("")
-      : "<tr><td colspan='5' class='no-access'>No users with a live (non-anonymized) IP yet.</td></tr>";
+      : "<tr><td colspan='7' class='no-access'>No users with a live (non-anonymized) IP yet.</td></tr>";
   }, function () { noAccess("distinctUsersWrap", "behavioral"); });
 
   // --- Top 5 session groups (mini cards with device/activity detail + a

@@ -707,45 +707,6 @@ app.get('/api/performance/page-comparison', requireSectionApi('performance'), as
   }
 });
 
-// GET /api/performance/slowest-events?limit=20 - the N individual 'load'
-// events with the highest total_load_time_ms, each identified by session,
-// user (the same IP-based "User N" pseudonym used everywhere else), and
-// page - a quick "what's actually been slow, and for whom" list to sit
-// next to page-comparison's averages, which can hide a single very bad
-// visit inside an otherwise fine average. Same reporting.* exclusion as
-// page-comparison, for the same reason (tracking removed from those pages
-// - see anonymizeOldIps's neighboring comments for the fuller version).
-// Scoring (good/needs improvement/poor) is left to the frontend, which
-// already carries the exact thresholds performance.html scores by - no
-// reason to duplicate that table server-side.
-app.get('/api/performance/slowest-events', requireSectionApi('performance'), async (req, res) => {
-  const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 20, 1), 100);
-  try {
-    const [rows] = await dbPool.query(
-      `SELECT session_id, ip, url, total_load_time_ms AS totalLoadTimeMs,
-              COALESCE(client_timestamp, server_timestamp) AS timestamp
-       FROM events
-       WHERE type = 'load' AND total_load_time_ms IS NOT NULL
-         AND url NOT LIKE 'https://reporting.shekarkrishnamoorthy.com/%'
-       ORDER BY total_load_time_ms DESC
-       LIMIT ?`,
-      [limit]
-    );
-    const userNumberByIp = await lookupUserNumbers(rows.map((r) => r.ip));
-    res.json(rows.map((r) => ({
-      session_id: r.session_id,
-      ip: r.ip,
-      userNumber: r.ip ? (userNumberByIp[r.ip] ?? null) : null,
-      url: r.url,
-      totalLoadTimeMs: r.totalLoadTimeMs,
-      timestamp: r.timestamp
-    })));
-  } catch (err) {
-    console.error('[GET /api/performance/slowest-events] error:', err.message);
-    res.status(500).json({ error: 'database error' });
-  }
-});
-
 // GET /api/behavioral/summary - type breakdown + totals across everything
 // that isn't a page-load event.
 app.get('/api/behavioral/summary', requireSectionApi('behavioral'), async (req, res) => {
@@ -810,48 +771,6 @@ app.get('/api/behavioral/events', requireSectionApi('behavioral'), async (req, r
   }
 });
 
-// GET /api/behavioral/sessions - cross-references every session's
-// scattered behavioral events (enter/activity/exit/submit_click/...) into
-// one row per session. Deliberately built only from behavioral-type rows
-// (excludes 'load'), so a behavioral-only analyst can't infer performance
-// signal (e.g. whether/when a load event happened) through this view.
-// Condensed to just identity + timing (session, ip, firstSeen, lastSeen) -
-// duration/pages/submitted are already covered in depth by the top-sessions
-// cards, so this card is the quick-glance "who and when" list, not a
-// duplicate of them.
-app.get('/api/behavioral/sessions', requireSectionApi('behavioral'), async (req, res) => {
-  const where = ["type != 'load'", 'session_id IS NOT NULL'];
-  const params = [];
-  const prefix = buildUrlPrefixClause(req);
-  if (prefix) { where.push(prefix.clause); params.push(prefix.param); }
-  const whereSql = 'WHERE ' + where.join(' AND ');
-  const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 500);
-
-  try {
-    const [rows] = await dbPool.query(
-      `SELECT s.session_id, s.ip, v.user_number AS userNumber, s.firstSeen, s.lastSeen
-       FROM (
-         SELECT
-           session_id,
-           SUBSTRING_INDEX(GROUP_CONCAT(ip ORDER BY id DESC SEPARATOR '||'), '||', 1) AS ip,
-           MIN(COALESCE(client_timestamp, server_timestamp)) AS firstSeen,
-           MAX(COALESCE(client_timestamp, server_timestamp)) AS lastSeen
-         FROM events
-         ${whereSql}
-         GROUP BY session_id
-       ) s
-       LEFT JOIN visitors v ON v.ip = s.ip
-       ORDER BY s.lastSeen DESC
-       LIMIT ?`,
-      [...params, limit]
-    );
-    res.json(rows);
-  } catch (err) {
-    console.error('[GET /api/behavioral/sessions] error:', err.message);
-    res.status(500).json({ error: 'database error' });
-  }
-});
-
 // GET /api/behavioral/distinct-users - unique visitors cross-referenced
 // against how many sessions they've generated. There's no login-based
 // identity for anonymous site visitors, so IP address is the only durable
@@ -864,18 +783,46 @@ app.get('/api/behavioral/sessions', requireSectionApi('behavioral'), async (req,
 app.get('/api/behavioral/distinct-users', requireSectionApi('behavioral'), async (req, res) => {
   const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 500);
   try {
+    // Longest/average session time need each session's own duration first
+    // (a per-session aggregate), then MAX()/AVG() of THOSE across a given
+    // ip's sessions - a second level of aggregation the old single-pass
+    // query over raw events couldn't express, since "session duration"
+    // isn't a column, it's already an aggregate over that session's rows.
     const [rows] = await dbPool.query(
       `SELECT
-         e.ip,
+         d.ip,
          v.user_number AS userNumber,
-         COUNT(DISTINCT e.session_id) AS sessionCount,
-         MIN(COALESCE(e.client_timestamp, e.server_timestamp)) AS firstSeen,
-         MAX(COALESCE(e.client_timestamp, e.server_timestamp)) AS lastSeen
-       FROM events e
-       LEFT JOIN visitors v ON v.ip = e.ip
-       WHERE e.ip IS NOT NULL AND e.session_id IS NOT NULL
-       GROUP BY e.ip, v.user_number
-       ORDER BY sessionCount DESC, lastSeen DESC
+         d.sessionCount,
+         d.firstSeen,
+         d.lastSeen,
+         d.longestSessionSecs,
+         d.avgSessionSecs
+       FROM (
+         SELECT
+           ip,
+           COUNT(*) AS sessionCount,
+           MIN(firstSeen) AS firstSeen,
+           MAX(lastSeen) AS lastSeen,
+           MAX(durationSecs) AS longestSessionSecs,
+           AVG(durationSecs) AS avgSessionSecs
+         FROM (
+           SELECT
+             session_id,
+             SUBSTRING_INDEX(GROUP_CONCAT(ip ORDER BY id DESC SEPARATOR '||'), '||', 1) AS ip,
+             MIN(COALESCE(client_timestamp, server_timestamp)) AS firstSeen,
+             MAX(COALESCE(client_timestamp, server_timestamp)) AS lastSeen,
+             TIMESTAMPDIFF(SECOND,
+               MIN(COALESCE(client_timestamp, server_timestamp)),
+               MAX(COALESCE(client_timestamp, server_timestamp))) AS durationSecs
+           FROM events
+           WHERE session_id IS NOT NULL
+           GROUP BY session_id
+         ) sessions
+         WHERE ip IS NOT NULL
+         GROUP BY ip
+       ) d
+       LEFT JOIN visitors v ON v.ip = d.ip
+       ORDER BY d.sessionCount DESC, d.lastSeen DESC
        LIMIT ?`,
       [limit]
     );
