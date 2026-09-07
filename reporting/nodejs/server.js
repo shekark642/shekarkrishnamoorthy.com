@@ -712,6 +712,44 @@ app.get('/api/performance/page-comparison', requireAuthApi, async (req, res) => 
   }
 });
 
+// GET /api/performance/hardware-scatter - one point per visitor (User N):
+// x = their device's logical CPU core count (navigator.hardwareConcurrency,
+// added to collector.js's staticData - a rough cross-browser hardware
+// signal, not a real benchmark), y = their average total_load_time_ms
+// across every session they've ever had, not just one. Only visitors with
+// at least one 'load' event carrying this new field show up - existing
+// historical events predate it and have nothing to plot.
+app.get('/api/performance/hardware-scatter', requireAuthApi, async (req, res) => {
+  try {
+    const [rows] = await dbPool.query(`
+      SELECT
+        ip,
+        AVG(JSON_EXTRACT(payload, '$.staticData.hardwareConcurrency')) AS hardwareConcurrency,
+        AVG(JSON_EXTRACT(payload, '$.staticData.deviceMemory')) AS deviceMemory,
+        AVG(total_load_time_ms) AS avgLoadTimeMs,
+        COUNT(*) AS sampleSize,
+        SUBSTRING_INDEX(GROUP_CONCAT(JSON_UNQUOTE(JSON_EXTRACT(payload, '$.staticData.userAgent')) ORDER BY id DESC SEPARATOR '||'), '||', 1) AS userAgent
+      FROM events
+      WHERE type = 'load' AND ip IS NOT NULL
+        AND JSON_EXTRACT(payload, '$.staticData.hardwareConcurrency') IS NOT NULL
+        AND url NOT LIKE 'https://reporting.shekarkrishnamoorthy.com/%'
+      GROUP BY ip
+    `);
+    const userNumberByIp = await lookupUserNumbers(rows.map((r) => r.ip));
+    res.json(rows.map((r) => ({
+      userNumber: userNumberByIp[r.ip] ?? null,
+      hardwareConcurrency: r.hardwareConcurrency,
+      deviceMemory: r.deviceMemory,
+      avgLoadTimeMs: r.avgLoadTimeMs,
+      sampleSize: r.sampleSize,
+      userAgent: r.userAgent
+    })));
+  } catch (err) {
+    console.error('[GET /api/performance/hardware-scatter] error:', err.message);
+    res.status(500).json({ error: 'database error' });
+  }
+});
+
 // GET /api/behavioral/summary - type breakdown + totals across everything
 // that isn't a page-load event.
 app.get('/api/behavioral/summary', requireAuthApi, async (req, res) => {
@@ -1284,6 +1322,26 @@ app.get('/api/behavioral/site-sessions', requirePageApi('music'), async (req, re
 
     const userNumberByIp = await lookupUserNumbers(base.map((r) => r.ip));
 
+    // "Did this visitor also check out the main site during this visit?"
+    // can't be answered by session_id at all - sessionStorage (and
+    // therefore session_id) is scoped per origin, so a test.
+    // shekarkrishnamoorthy.com session can never literally share a
+    // session_id with a shekarkrishnamoorthy.com one, by construction. IP
+    // is the only cross-origin signal available (the same one User N
+    // identity is already built on) - "yes" means this visitor's IP has
+    // been seen on the main domain at some point, not necessarily during
+    // this exact visit window.
+    const ips = [...new Set(base.map((r) => r.ip).filter(Boolean))];
+    let mainDomainIps = new Set();
+    if (ips.length) {
+      const ipPlaceholders = ips.map(() => '?').join(',');
+      const [mainDomainRows] = await dbPool.query(
+        `SELECT DISTINCT ip FROM events WHERE url LIKE 'https://shekarkrishnamoorthy.com/%' AND ip IN (${ipPlaceholders})`,
+        ips
+      );
+      mainDomainIps = new Set(mainDomainRows.map((r) => r.ip));
+    }
+
     res.json(base.map((r) => ({
       session_id: r.session_id,
       ip: r.ip,
@@ -1292,6 +1350,7 @@ app.get('/api/behavioral/site-sessions', requirePageApi('music'), async (req, re
       lastSeen: r.lastSeen,
       durationSecs: r.durationSecs,
       submitted: r.submitted,
+      returnedToMainDomain: r.ip ? mainDomainIps.has(r.ip) : null,
       pageTime: computePageBreakdown(eventsBySession[r.session_id] || []),
       totalClicks: (clicksBySession[r.session_id] || { total: 0 }).total,
       usefulClicks: (clicksBySession[r.session_id] || { useful: 0 }).useful

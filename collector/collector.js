@@ -145,7 +145,14 @@
       screenHeight: window.screen.height,
       windowWidth: window.innerWidth,
       windowHeight: window.innerHeight,
-      connectionType: connectionType
+      connectionType: connectionType,
+      // Rough hardware signal, not a real benchmark: logical CPU core count
+      // is available cross-browser (Chrome/Firefox/Safari all support it);
+      // deviceMemory (approximate device RAM in GB) is Chrome/Edge-only and
+      // null everywhere else, so it's collected but treated as supplementary
+      // rather than the primary "how fast is this machine" signal.
+      hardwareConcurrency: navigator.hardwareConcurrency || null,
+      deviceMemory: navigator.deviceMemory || null
     };
   }
 

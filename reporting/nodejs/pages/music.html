@@ -70,6 +70,7 @@
       <button class="btn" id="applyBtn">Apply Filter</button>
       <span class="filter-count" id="filterCount"></span>
     </div>
+    <p style="color:#94a3b8;font-size:0.78rem;margin:-0.6rem 0 0.9rem;">"Returned to Main Domain?" is by visitor (IP), not this exact session - a music-site session can never literally share a session_id with a main-site one (sessionStorage is per-origin), so this answers "has this visitor also been seen on shekarkrishnamoorthy.com at some point," not "did they switch over during this visit."</p>
     <div class="table-wrap" id="tableWrap">
       <p class="empty">Loading...</p>
     </div>
@@ -117,7 +118,7 @@
     var pageKeys = Object.keys(PAGE_LABELS);
     var head = "<tr><th>Session</th><th>User</th><th>Total Time</th>" +
       pageKeys.map(function (k) { return "<th>" + PAGE_LABELS[k] + "</th>"; }).join("") +
-      "<th>Submitted?</th><th>Useful Clicks</th><th>Total Clicks</th></tr>";
+      "<th>Submitted?</th><th>Useful Clicks</th><th>Total Clicks</th><th>Returned to Main Domain?</th></tr>";
     var body = rows.map(function (r) {
       return "<tr><td class='mono'>" + esc(r.session_id.slice(0, 14)) + "</td>" +
         "<td>" + (r.userNumber ? "User " + r.userNumber : "—") + "</td>" +
@@ -128,7 +129,8 @@
         }).join("") +
         "<td>" + (r.submitted ? "✅" : "—") + "</td>" +
         "<td class='num'>" + r.usefulClicks + "</td>" +
-        "<td class='num'>" + r.totalClicks + "</td></tr>";
+        "<td class='num'>" + r.totalClicks + "</td>" +
+        "<td>" + (r.returnedToMainDomain === null ? "—" : (r.returnedToMainDomain ? "Yes" : "No")) + "</td></tr>";
     }).join("");
     wrap.innerHTML = "<table><thead>" + head + "</thead><tbody>" + body + "</tbody></table>";
   }

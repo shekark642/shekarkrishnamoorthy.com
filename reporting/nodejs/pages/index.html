@@ -27,6 +27,7 @@
   .card h2 { font-size: 1rem; margin: 0 0 0.9rem; }
   .card canvas { max-height: 260px; }
   #siteComparisonWrap { height: 340px; }
+  #hardwareScatterWrap { height: 340px; }
   .no-access { color: #94a3b8; font-size: 0.85rem; font-style: italic; }
   .empty { color: #94a3b8; font-size: 0.85rem; font-style: italic; }
   .table-wrap { overflow-x: auto; }
@@ -82,8 +83,14 @@
   </div>
 
   <div class="card">
-    <h2>Page Load Time Trend (performance, last 100 users)</h2>
+    <h2>Page Load Time Trend (performance, last 100 sessions)</h2>
     <div id="loadTimeChartWrap"><canvas id="loadTimeChart"></canvas></div>
+  </div>
+
+  <div class="card">
+    <h2>Hardware vs. Average Load Time</h2>
+    <p style="margin:-0.4rem 0 0.9rem;color:#64748b;font-size:0.82rem">One point per visitor - CPU core count (a rough, cross-browser hardware signal, not a full benchmark) against their average load time across every session they've had. Hover a point for details.</p>
+    <div id="hardwareScatterWrap"><canvas id="hardwareScatterChart"></canvas></div>
   </div>
 
   <div class="card">
@@ -228,16 +235,77 @@
           borderColor: "#db2777",
           backgroundColor: "rgba(219,39,119,0.1)",
           tension: 0.3,
-          fill: true
+          fill: true,
+          // Just the overall trend, not individual points to click/hover -
+          // a plain shape, not an interactive per-event chart.
+          pointRadius: 0,
+          pointHoverRadius: 0
         }]
       },
       options: {
         responsive: true,
-        plugins: { legend: { display: false } },
+        plugins: { legend: { display: false }, tooltip: { enabled: false } },
         scales: { y: { beginAtZero: true } }
       }
     });
   }, function () { noAccess("loadTimeChartWrap", "performance"); });
+
+  // --- Hardware vs. Average Load Time (scatter) ---
+  fetchScoped("/api/performance/hardware-scatter", function (rows) {
+    if (!rows.length) {
+      document.getElementById("hardwareScatterWrap").innerHTML = '<p class="no-access">No hardware data recorded yet.</p>';
+      return;
+    }
+    var points = rows.map(function (r) {
+      return {
+        x: Math.round(r.hardwareConcurrency * 10) / 10,
+        y: Math.round(r.avgLoadTimeMs),
+        userNumber: r.userNumber,
+        deviceMemory: r.deviceMemory,
+        sampleSize: r.sampleSize,
+        browser: parseUA(r.userAgent)
+      };
+    });
+    new Chart(document.getElementById("hardwareScatterChart"), {
+      type: "scatter",
+      data: {
+        datasets: [{
+          label: "Visitors",
+          data: points,
+          backgroundColor: "#0284c7",
+          pointRadius: 6,
+          pointHoverRadius: 8
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              label: function (ctx) {
+                var p = ctx.raw;
+                var lines = [
+                  (p.userNumber ? "User " + p.userNumber : "Unknown user"),
+                  p.browser,
+                  "CPU cores: " + p.x,
+                  "Avg load time: " + p.y + " ms",
+                  "Sessions sampled: " + p.sampleSize
+                ];
+                if (p.deviceMemory) lines.push("Device memory: ~" + Math.round(p.deviceMemory) + " GB");
+                return lines;
+              }
+            }
+          }
+        },
+        scales: {
+          x: { title: { display: true, text: "CPU cores (hardwareConcurrency)" }, beginAtZero: true, ticks: { precision: 0 } },
+          y: { title: { display: true, text: "Avg load time (ms)" }, beginAtZero: true }
+        }
+      }
+    });
+  }, function () { noAccess("hardwareScatterWrap", "performance"); });
 
   // --- Actual vs. Expected Load Time by Page (comparison bar chart) ---
   //
