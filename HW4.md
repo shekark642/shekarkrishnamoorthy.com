@@ -261,16 +261,3 @@ re-plotted:
    load time trace back to their hardware," not to be eyeballed against
    a separate table.
 
-**Bug found and fixed while building these:** the Visitor Type pie chart
-(bot/human split) undercounted against the "Unique Sessions" stat beside
-it - bot/human classification only considered sessions with a `load`
-event, while "Unique Sessions" counted sessions with *any* event.
-Traced with live data to real sessions that bounced before `load` (and
-the async image-availability check it waits on) ever fired - genuinely
-unclassifiable, not a bot-detection defect. Fix: group over the full
-event set so a session with zero load events resolves to `NULL`
-(unclassified) rather than defaulting to "human," and show that as an
-explicit third pie slice. Result: the pie chart's total now always
-equals the "Unique Sessions" stat next to it, which is what surfaced the
-discrepancy in the first place - the two numbers were checked against
-each other directly with live data, not assumed consistent.
