@@ -539,50 +539,73 @@ const collectLimiter = rateLimit({
   }
 });
 
+// collector.js can send either one event object (the common case) or an
+// array of them in a single beacon - two events that happen at the exact
+// same moment (the final activity flush + 'exit' on tab-hide) shouldn't
+// cost two separate requests just because /collect only ever understood
+// one event per call. Normalizing to an array here means every check
+// below (validation, size, insert, visitor upsert) is written once and
+// applies the same way regardless of which shape arrived.
 app.post('/collect', collectLimiter, async (req, res) => {
-  const payload = req.body;
+  const payloads = Array.isArray(req.body) ? req.body : [req.body];
 
-  if (!payload || typeof payload.url !== 'string' || typeof payload.type !== 'string') {
-    return res.status(400).json({ error: 'Missing required fields: url, type' });
+  if (!payloads.length || payloads.length > 10) {
+    return res.status(400).json({ error: 'Batch must contain 1-10 events' });
+  }
+  for (const payload of payloads) {
+    if (!payload || typeof payload.url !== 'string' || typeof payload.type !== 'string') {
+      return res.status(400).json({ error: 'Missing required fields: url, type' });
+    }
   }
 
-  const size = Buffer.byteLength(JSON.stringify(payload), 'utf8');
+  // Sized as one beacon, not per event - a batch is still a single wire
+  // transmission, and the point of this cap is bounding one request's
+  // cost, not how many logical events happen to ride along in it.
+  const size = Buffer.byteLength(JSON.stringify(payloads), 'utf8');
   if (size > 50 * 1024) {
-    flagClient(dbPool, req, 'oversized_payload', { sizeBytes: size },
-      typeof payload.session === 'string' ? payload.session : null);
+    flagClient(dbPool, req, 'oversized_payload', { sizeBytes: size, batchSize: payloads.length },
+      typeof payloads[0].session === 'string' ? payloads[0].session : null);
     return res.status(413).json({ error: 'Payload too large' });
   }
 
   // Server-side timestamp: client clocks can be wrong by minutes or hours.
-  // Keeping both lets you detect clock skew later.
-  payload.serverTimestamp = new Date().toISOString();
-  payload.ip = req.ip;
-
-  broadcastLive(payload);
+  // Keeping both lets you detect clock skew later. Shared across the whole
+  // batch since they were all generated in the same client-side moment.
+  const serverTimestamp = new Date().toISOString();
+  for (const payload of payloads) {
+    payload.serverTimestamp = serverTimestamp;
+    payload.ip = req.ip;
+    broadcastLive(payload);
+  }
 
   try {
-    await dbPool.execute(
-      'INSERT INTO events (session_id, type, url, ip, client_timestamp, payload) VALUES (?, ?, ?, ?, ?, ?)',
-      [
-        typeof payload.session === 'string' ? payload.session.slice(0, 64) : null,
-        payload.type.slice(0, 32),
-        payload.url,
-        payload.ip || null,
-        payload.timestamp ? new Date(payload.timestamp) : null,
-        JSON.stringify(payload)
-      ]
-    );
+    for (const payload of payloads) {
+      await dbPool.execute(
+        'INSERT INTO events (session_id, type, url, ip, client_timestamp, payload) VALUES (?, ?, ?, ?, ?, ?)',
+        [
+          typeof payload.session === 'string' ? payload.session.slice(0, 64) : null,
+          payload.type.slice(0, 32),
+          payload.url,
+          payload.ip || null,
+          payload.timestamp ? new Date(payload.timestamp) : null,
+          JSON.stringify(payload)
+        ]
+      );
+    }
 
     // Assigns this IP a permanent, sequential "user number" the first time
     // it's ever seen (User 1, User 2, ...) - reporting/nodejs's dashboards
     // read this table to label sessions with a stable pseudonym instead of
     // a raw IP. Fired without awaiting: it's bookkeeping on the side, not
     // part of what makes a beacon "received" - a failure here should never
-    // turn into a 500 or a JSONL-fallback write for the whole event.
-    if (payload.ip) {
+    // turn into a 500 or a JSONL-fallback write for the whole event. Every
+    // payload in one beacon shares the same ip, so this only needs to run
+    // once per request, not once per event.
+    const ip = payloads[0].ip;
+    if (ip) {
       dbPool.execute(
         'INSERT INTO visitors (ip) VALUES (?) ON DUPLICATE KEY UPDATE last_seen = CURRENT_TIMESTAMP',
-        [payload.ip]
+        [ip]
       ).catch((err) => console.error('[collect] visitor upsert failed:', err.message));
     }
 
@@ -591,7 +614,7 @@ app.post('/collect', collectLimiter, async (req, res) => {
     // Never lose a beacon just because the DB hiccuped - fall back to the
     // same local JSONL file Module 04 used, and still tell the client we
     // received it.
-    appendToJsonlFallback(payload, err.message);
+    payloads.forEach((payload) => appendToJsonlFallback(payload, err.message));
     res.sendStatus(204);
   }
 });

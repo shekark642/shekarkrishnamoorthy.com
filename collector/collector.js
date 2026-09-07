@@ -28,7 +28,7 @@
 
   // --- Sending ---
 
-  function send(type, data) {
+  function buildPayload(type, data) {
     var payload = {
       type: type,
       session: getSessionId(),
@@ -38,12 +38,19 @@
     for (var k in data) {
       if (Object.prototype.hasOwnProperty.call(data, k)) payload[k] = data[k];
     }
-
     // Purely for local debugging/verification - harmless in production, no
     // listener means no cost.
     window.dispatchEvent(new CustomEvent('collector:sent', { detail: payload }));
+    return payload;
+  }
 
-    var json = JSON.stringify(payload);
+  // One beacon can carry either a single event (the normal case - every
+  // call site below except the tab-hide handler) or an array of them, so
+  // that two logically-distinct events (a final activity flush + 'exit')
+  // that happen at the exact same moment don't have to cost two separate
+  // network requests. /collect on the server accepts both shapes.
+  function transmit(body) {
+    var json = JSON.stringify(body);
     var blob = new Blob([json], { type: 'application/json' });
     var sent = navigator.sendBeacon && navigator.sendBeacon(ENDPOINT, blob);
     if (!sent) {
@@ -54,6 +61,15 @@
         keepalive: true
       }).catch(function () {});
     }
+  }
+
+  function send(type, data) {
+    transmit(buildPayload(type, data));
+  }
+
+  function sendBatch(events) {
+    // events: [{type, data}, ...]
+    transmit(events.map(function (e) { return buildPayload(e.type, e.data); }));
   }
 
   // --- Static data (collected after load) ---
@@ -294,33 +310,47 @@
     });
   });
 
-  function flushActivity() {
+  // Returns the batched activity data (and clears the buffers) if there's
+  // anything to report, or null otherwise - separated from actually
+  // sending so the tab-hide handler below can combine this with 'exit'
+  // into a single beacon instead of firing two.
+  function collectActivity() {
     if (!mouseMoves.length && !mouseClicks.length && !scrollEvents.length &&
         !keyEvents.length && !idlePeriods.length && !errorLog.length) {
-      return;
+      return null;
     }
-    send('activity', {
+    var data = {
       mouseMoves: mouseMoves,
       mouseClicks: mouseClicks,
       scrollEvents: scrollEvents,
       keyEvents: keyEvents,
       idlePeriods: idlePeriods,
       errors: errorLog
-    });
+    };
     mouseMoves = [];
     mouseClicks = [];
     scrollEvents = [];
     keyEvents = [];
     idlePeriods = [];
     errorLog = [];
+    return data;
+  }
+
+  function flushActivity() {
+    var data = collectActivity();
+    if (data) send('activity', data);
   }
 
   setInterval(flushActivity, ACTIVITY_FLUSH_MS);
 
   document.addEventListener('visibilitychange', function () {
     if (document.visibilityState === 'hidden') {
-      flushActivity();
-      send('exit', {});
+      // Both of these fire at the same moment on every tab-hide - one
+      // beacon carrying both events instead of two separate requests.
+      var activityData = collectActivity();
+      var events = activityData ? [{ type: 'activity', data: activityData }] : [];
+      events.push({ type: 'exit', data: {} });
+      sendBatch(events);
     }
   });
 
