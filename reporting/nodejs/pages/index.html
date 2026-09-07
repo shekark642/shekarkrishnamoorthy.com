@@ -7,8 +7,9 @@
 <link rel="icon" type="image/svg+xml" href="https://shekarkrishnamoorthy.com/favicon.svg">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.5.1/chart.umd.min.js"></script>
 <style>
-  body { font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif; background: #f8fafc; color: #0f172a; margin: 0; padding: 2rem 1.5rem 4rem; }
+  body { font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif; background: #f8fafc; color: #0f172a; margin: 0; padding: 2rem 1.5rem 4rem; overflow-x: hidden; }
   main { max-width: 980px; margin: 0 auto; }
+  #recentWrap, #sessionsWrap, #flaggedWrap { overflow-x: auto; }
   header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 0.8rem; }
   header h1 { font-size: 1.35rem; margin: 0 0 0.2rem; }
   header p { margin: 0; color: #64748b; font-size: 0.85rem; }
@@ -31,6 +32,17 @@
   th, td { text-align: left; padding: 0.5rem 0.6rem; border-bottom: 1px solid #eef2f7; }
   th { color: #475569; font-weight: 600; }
   td.mono { font-family: ui-monospace, Consolas, monospace; font-size: 0.78rem; }
+
+  .session-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; }
+  .session-card { border: 1px solid #dbe3ee; border-radius: 12px; padding: 0.9rem 1rem; background: #fbfdff; }
+  .session-card h3 { margin: 0 0 0.5rem; font-size: 0.85rem; font-family: ui-monospace, Consolas, monospace; }
+  .session-card table.kv { font-size: 0.76rem; }
+  .session-card table.kv td { padding: 0.2rem 0.3rem; border-bottom: none; }
+  .session-card table.kv td:first-child { color: #64748b; }
+  .session-card table.kv td:last-child { text-align: right; font-family: ui-monospace, Consolas, monospace; word-break: break-all; }
+  .btn-replay { width: 100%; margin-top: 0.6rem; border: 1px solid #0284c7; background: #eff6ff; color: #0284c7; border-radius: 7px; padding: 0.4rem; font-size: 0.78rem; font-weight: 600; cursor: pointer; }
+  .btn-replay:hover { background: #dbeafe; }
+  .replay-canvas { display: none; width: 100%; height: 160px; margin-top: 0.6rem; border: 1px solid #dbe3ee; border-radius: 8px; background: #f8fafc; }
 
   .cta-row { display: flex; gap: 0.8rem; margin-top: 1.5rem; flex-wrap: wrap; }
   .btn { display: inline-block; border: none; border-radius: 8px; padding: 0.65rem 1.2rem; background: #0284c7; color: #fff; font-weight: 600; text-decoration: none; font-size: 0.88rem; cursor: pointer; }
@@ -85,6 +97,18 @@
         <tbody id="sessionRows"></tbody>
       </table>
     </div>
+  </div>
+
+  <div class="card">
+    <h2>Top 5 Most Recent Sessions (behavioral)</h2>
+    <p style="margin:-0.4rem 0 0.9rem;color:#64748b;font-size:0.82rem">Device, activity totals, exit page (where they were when the session ended), and a mouse-movement replay for each.</p>
+    <div class="session-grid" id="recentSessionGrid"></div>
+  </div>
+
+  <div class="card">
+    <h2>Top 5 Sessions by Total Time on Site (behavioral)</h2>
+    <p style="margin:-0.4rem 0 0.9rem;color:#64748b;font-size:0.82rem">Same detail, ranked by duration instead of recency.</p>
+    <div class="session-grid" id="topTimeSessionGrid"></div>
   </div>
 
   <div class="card" id="flaggedCard" style="display:none">
@@ -239,6 +263,121 @@
         "<td>" + (r.submitted ? "✅" : "—") + "</td></tr>";
     }).join("");
   }, function () { noAccess("sessionsWrap", "behavioral"); });
+
+  // --- Top 5 session groups (mini cards with device/activity detail + a
+  // mouse-movement replay button per card) ---
+  function parseUA(ua) {
+    if (!ua) return "Unknown";
+    var browser = /Edg\//.test(ua) ? "Edge" : /Chrome\//.test(ua) ? "Chrome" :
+      /Firefox\//.test(ua) ? "Firefox" : /Safari\//.test(ua) ? "Safari" : "Other";
+    var os = /Windows/.test(ua) ? "Windows" : /Mac OS/.test(ua) ? "macOS" :
+      /Android/.test(ua) ? "Android" : /iPhone|iPad/.test(ua) ? "iOS" :
+      /Linux/.test(ua) ? "Linux" : "Unknown OS";
+    return browser + " / " + os;
+  }
+
+  function sessionCardHtml(r, rank) {
+    var d = r.device || {};
+    var a = r.activity || {};
+    return '<div class="session-card">' +
+      '<h3>#' + rank + ' · ' + esc(r.session_id.slice(0, 14)) + '</h3>' +
+      '<table class="kv">' +
+        '<tr><td>Duration</td><td>' + fmtDuration(r.durationSecs) + '</td></tr>' +
+        '<tr><td>Pages visited</td><td>' + r.pagesVisited + '</td></tr>' +
+        '<tr><td>Events</td><td>' + r.eventCount + '</td></tr>' +
+        '<tr><td>Exit page</td><td>' + esc((r.exitUrl || "").replace(/^https?:\/\//, "")) + '</td></tr>' +
+        '<tr><td>Submitted?</td><td>' + (r.submitted ? "✅ yes" : "— no") + '</td></tr>' +
+        '<tr><td>Type</td><td>' + (d.isBot ? "🤖 Bot" : "🧑 Human") + '</td></tr>' +
+        '<tr><td>Browser / OS</td><td>' + esc(parseUA(d.userAgent)) + '</td></tr>' +
+        '<tr><td>Screen</td><td>' + (d.screenWidth || "?") + '×' + (d.screenHeight || "?") + '</td></tr>' +
+        '<tr><td>Connection</td><td>' + esc(d.connectionType || "unknown") + '</td></tr>' +
+        '<tr><td>Mouse moves</td><td>' + (a.totalMouseMoves || 0) + '</td></tr>' +
+        '<tr><td>Clicks</td><td>' + (a.totalClicks || 0) + '</td></tr>' +
+        '<tr><td>Scrolls</td><td>' + (a.totalScrolls || 0) + '</td></tr>' +
+        '<tr><td>Idle periods</td><td>' + (a.totalIdlePeriods || 0) + '</td></tr>' +
+        '<tr><td>Errors</td><td>' + (a.totalErrors || 0) + '</td></tr>' +
+      '</table>' +
+      '<button class="btn-replay" data-session="' + esc(r.session_id) + '" ' +
+        'data-w="' + (d.windowWidth || 1200) + '" data-h="' + (d.windowHeight || 800) + '">▶ Replay mouse activity</button>' +
+      '<canvas class="replay-canvas" width="400" height="160"></canvas>' +
+    '</div>';
+  }
+
+  // Animates through a time-merged list of moves+clicks on a fixed short
+  // budget (~6s total) regardless of the real session length, so a 20-
+  // minute session's activity is still watchable at a glance. Coordinates
+  // are scaled from the client's own recorded window size into the fixed
+  // canvas, so the path lines up with roughly where things happened on
+  // their screen, not a literal pixel-for-pixel replay.
+  function playReplay(canvas, moves, clicks, winW, winH) {
+    var ctx = canvas.getContext("2d");
+    var W = canvas.width, H = canvas.height;
+    var scaleX = W / (winW || 1200), scaleY = H / (winH || 800);
+    var events = moves.map(function (m) { return { x: m.x, y: m.y, t: m.timestamp, click: false }; })
+      .concat(clicks.map(function (c) { return { x: c.x, y: c.y, t: c.timestamp, click: true }; }))
+      .sort(function (a, b) { return new Date(a.t) - new Date(b.t); });
+    if (!events.length) { ctx.fillStyle = "#94a3b8"; ctx.font = "12px sans-serif"; ctx.fillText("No mouse activity recorded.", 10, 80); return; }
+
+    var stepMs = Math.max(8, Math.min(60, 6000 / events.length));
+    var trail = [];
+    var i = 0;
+    function frame() {
+      if (i >= events.length) return;
+      var e = events[i];
+      var x = e.x * scaleX, y = e.y * scaleY;
+      trail.push({ x: x, y: y });
+      if (trail.length > 30) trail.shift();
+
+      ctx.fillStyle = "#f8fafc";
+      ctx.fillRect(0, 0, W, H);
+      ctx.strokeStyle = "rgba(2,132,199,0.45)";
+      ctx.beginPath();
+      trail.forEach(function (p, idx) { idx === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y); });
+      ctx.stroke();
+
+      if (e.click) {
+        ctx.strokeStyle = "#db2777";
+        ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(x, y, 10, 0, Math.PI * 2); ctx.stroke();
+        ctx.lineWidth = 1;
+      }
+      ctx.fillStyle = "#0284c7";
+      ctx.beginPath(); ctx.arc(x, y, 4, 0, Math.PI * 2); ctx.fill();
+
+      i++;
+      setTimeout(function () { requestAnimationFrame(frame); }, stepMs);
+    }
+    frame();
+  }
+
+  document.addEventListener("click", function (e) {
+    var btn = e.target.closest && e.target.closest(".btn-replay");
+    if (!btn) return;
+    var canvas = btn.nextElementSibling;
+    var sessionId = btn.dataset.session;
+    canvas.style.display = "block";
+    btn.disabled = true;
+    btn.textContent = "Loading...";
+    fetch("/api/behavioral/session-mouse/" + encodeURIComponent(sessionId))
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        btn.disabled = false;
+        btn.textContent = "▶ Replay again";
+        playReplay(canvas, data.moves, data.clicks, Number(btn.dataset.w), Number(btn.dataset.h));
+      });
+  });
+
+  fetchScoped("/api/behavioral/top-sessions?sortBy=recent&limit=5", function (rows) {
+    document.getElementById("recentSessionGrid").innerHTML = rows.length
+      ? rows.map(function (r, idx) { return sessionCardHtml(r, idx + 1); }).join("")
+      : '<p class="no-access">No sessions yet.</p>';
+  }, function () { noAccess("recentSessionGrid", "behavioral"); });
+
+  fetchScoped("/api/behavioral/top-sessions?sortBy=duration&limit=5", function (rows) {
+    document.getElementById("topTimeSessionGrid").innerHTML = rows.length
+      ? rows.map(function (r, idx) { return sessionCardHtml(r, idx + 1); }).join("")
+      : '<p class="no-access">No sessions yet.</p>';
+  }, function () { noAccess("topTimeSessionGrid", "behavioral"); });
 
   // --- Visitor Type (pie chart - bot vs human, one slice each) ---
   fetchScoped("/api/behavioral/visitor-types", function (data) {
