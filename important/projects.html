@@ -8,8 +8,61 @@
 <link rel="stylesheet" href="/assets/site-nav.css">
 <style>
   main { max-width: 1000px; margin: 0 auto; padding: 2.5rem 1.5rem 4rem; }
-  .card h2 { margin-top: 0; font-size: 1.1rem; }
-  .card p { color: var(--muted); }
+
+  .project-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1.25rem;
+    margin-top: 1.5rem;
+  }
+  @media (max-width: 560px) {
+    .project-grid { grid-template-columns: 1fr; }
+  }
+
+  .project-card {
+    display: block;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    overflow: hidden;
+    text-decoration: none;
+    color: inherit;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 4px 12px rgba(15, 23, 42, 0.05);
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+  }
+  .project-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 2px 4px rgba(15, 23, 42, 0.06), 0 8px 20px rgba(15, 23, 42, 0.08);
+  }
+
+  .project-thumb {
+    aspect-ratio: 16 / 9;
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--muted);
+    font-size: 0.8rem;
+  }
+  .project-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+
+  .project-info { padding: 0.9rem 1rem 1.1rem; }
+  .project-info h3 { margin: 0 0 0.2rem; font-size: 1rem; }
+  .project-year {
+    margin: 0 0 0.5rem;
+    font-size: 0.72rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--accent);
+  }
+  .project-desc { margin: 0; font-size: 0.85rem; color: var(--muted); }
 </style>
 </head>
 <body>
@@ -32,16 +85,35 @@
     <p>A growing list of things built outside the graded homework log.</p>
   </div>
 
-  <div class="card">
-    <h2>Example project entry</h2>
-    <p>This page is a template for the <code>/important/</code> directory &mdash; a placeholder to demonstrate the pattern. Replace this card with a real project, or copy this file (<code>important/&lt;name&gt;.html</code>) for each new one and link it from the homepage's "Other Projects" section.</p>
-    <p id="liveNote" class="note"></p>
-  </div>
+  <div class="project-grid" id="projectGrid"></div>
 </main>
 
 <script>
-  // Demonstrates this directory can hold JS-driven pages too, not just static ones.
-  document.getElementById("liveNote").textContent = "Page rendered at " + new Date().toLocaleString() + ".";
+  // Skeleton project data - each real project becomes one object here.
+  // image: leave "" for a placeholder box until a real thumbnail exists.
+  // url: leave "#" until the project has a real link.
+  const projects = [
+    { title: "Project 1", year: "", image: "", desc: "Description coming soon.", url: "#" },
+    { title: "Project 2", year: "", image: "", desc: "Description coming soon.", url: "#" },
+    { title: "Project 3", year: "", image: "", desc: "Description coming soon.", url: "#" },
+    { title: "Project 4", year: "", image: "", desc: "Description coming soon.", url: "#" },
+    { title: "Project 5", year: "", image: "", desc: "Description coming soon.", url: "#" },
+    { title: "Project 6", year: "", image: "", desc: "Description coming soon.", url: "#" },
+    { title: "Project 7", year: "", image: "", desc: "Description coming soon.", url: "#" },
+    { title: "Project 8", year: "", image: "", desc: "Description coming soon.", url: "#" },
+  ];
+
+  const grid = document.getElementById("projectGrid");
+  grid.innerHTML = projects.map(p => `
+    <a class="project-card" href="${p.url}">
+      <div class="project-thumb">${p.image ? `<img src="${p.image}" alt="">` : "Image"}</div>
+      <div class="project-info">
+        <h3>${p.title}</h3>
+        <p class="project-year">${p.year || "TBD"}</p>
+        <p class="project-desc">${p.desc}</p>
+      </div>
+    </a>
+  `).join("");
 </script>
 
 </body>
