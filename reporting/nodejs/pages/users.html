@@ -33,7 +33,7 @@
   .modal { background: #fff; border-radius: 14px; padding: 1.75rem; width: 100%; max-width: 400px; }
   .modal h2 { font-size: 1.05rem; margin-top: 0; }
   .modal label { display: block; font-size: 0.83rem; font-weight: 600; color: #334155; margin: 0.7rem 0 0.25rem; }
-  .modal input[type="text"], .modal input[type="email"], .modal input[type="password"], .modal select {
+  .modal input[type="text"], .modal input[type="password"], .modal select {
     width: 100%; padding: 0.5rem 0.7rem; border: 1px solid #dbe3ee; border-radius: 7px; font-size: 0.88rem; box-sizing: border-box;
   }
   .modal .checkrow { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.5rem; }
@@ -45,9 +45,6 @@
   #scopeRow { display: none; margin-top: 0.6rem; }
   #scopeRow .hint { color: #64748b; font-size: 0.78rem; margin: 0 0 0.4rem; }
 </style>
-<script src="https://shekarkrishnamoorthy.com/assets/analytics.js"></script>
-<!-- HW3 custom analytics collector: static/performance/activity data -->
-<script src="https://collector.shekarkrishnamoorthy.com/collector.js" async></script>
 </head>
 <body>
 <main>
@@ -63,7 +60,7 @@
   <div class="card">
     <button class="btn-primary" id="createBtn">+ New User</button>
     <table>
-      <thead><tr><th>Username</th><th>Email</th><th>Role</th><th>Sections</th><th>Created</th><th>Actions</th></tr></thead>
+      <thead><tr><th>Username</th><th>Role</th><th>Sections</th><th>Created</th><th>Actions</th></tr></thead>
       <tbody id="userRows"></tbody>
     </table>
   </div>
@@ -76,8 +73,6 @@
       <input type="hidden" id="userId">
       <label for="username">Username</label>
       <input type="text" id="username" required>
-      <label for="email">Email</label>
-      <input type="email" id="email" required>
       <label for="password" id="passwordLabel">Password</label>
       <input type="password" id="password">
       <label for="role">Role</label>
@@ -116,7 +111,6 @@
           : "—";
         return "<tr>" +
           "<td>" + esc(u.username) + "</td>" +
-          "<td>" + esc(u.email) + "</td>" +
           "<td><span class='badge " + u.role + "'>" + roleLabel(u.role) + "</span></td>" +
           "<td>" + scopeHtml + "</td>" +
           "<td>" + new Date(u.created_at).toLocaleDateString() + "</td>" +
@@ -167,7 +161,6 @@
     openModal("Edit User");
     document.getElementById("userId").value = user.id;
     document.getElementById("username").value = user.username;
-    document.getElementById("email").value = user.email;
     document.getElementById("role").value = user.role;
     document.getElementById("scopePerformance").checked = user.scopes.indexOf("performance") !== -1;
     document.getElementById("scopeBehavioral").checked = user.scopes.indexOf("behavioral") !== -1;
@@ -198,7 +191,6 @@
     }
     var body = {
       username: document.getElementById("username").value,
-      email: document.getElementById("email").value,
       role: role,
       scopes: scopes
     };

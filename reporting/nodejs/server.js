@@ -210,22 +210,22 @@ function requireRolePage(...roles) {
 
 app.post('/auth/login', async (req, res) => {
   const body = req.body || {};
-  const usernameOrEmail = body.usernameOrEmail;
+  const username = body.username;
   const password = body.password;
-  if (typeof usernameOrEmail !== 'string' || !usernameOrEmail || typeof password !== 'string' || !password) {
-    return res.status(400).json({ error: 'usernameOrEmail and password are required' });
+  if (typeof username !== 'string' || !username || typeof password !== 'string' || !password) {
+    return res.status(400).json({ error: 'username and password are required' });
   }
 
   try {
     const [rows] = await dbPool.query(
-      'SELECT id, username, password_hash, role FROM users WHERE username = ? OR email = ? LIMIT 1',
-      [usernameOrEmail, usernameOrEmail]
+      'SELECT id, username, password_hash, role FROM users WHERE username = ? LIMIT 1',
+      [username]
     );
-    if (!rows.length) return res.status(401).json({ error: 'invalid username/email or password' });
+    if (!rows.length) return res.status(401).json({ error: 'invalid username or password' });
 
     const user = rows[0];
     const match = await bcrypt.compare(password, user.password_hash);
-    if (!match) return res.status(401).json({ error: 'invalid username/email or password' });
+    if (!match) return res.status(401).json({ error: 'invalid username or password' });
 
     const token = await createSession(user);
 
@@ -954,7 +954,7 @@ async function setUserScopes(userId, scopes) {
   }
 }
 
-const USER_FIELDS = 'id, username, email, role, created_at';
+const USER_FIELDS = 'id, username, role, created_at';
 
 app.get('/api/users', requireRoleApi('super_admin'), async (req, res) => {
   try {
@@ -985,7 +985,6 @@ app.post('/api/users', requireRoleApi('super_admin'), async (req, res) => {
   const body = req.body || {};
   if ('id' in body) return res.status(400).json({ error: 'POST must not include an id - the database assigns one' });
   if (typeof body.username !== 'string' || !body.username) return res.status(400).json({ error: 'username is required' });
-  if (typeof body.email !== 'string' || !body.email) return res.status(400).json({ error: 'email is required' });
   if (typeof body.password !== 'string' || body.password.length < 8) {
     return res.status(400).json({ error: 'password is required and must be at least 8 characters' });
   }
@@ -998,8 +997,8 @@ app.post('/api/users', requireRoleApi('super_admin'), async (req, res) => {
   try {
     const hash = await bcrypt.hash(body.password, 10);
     const [result] = await dbPool.execute(
-      'INSERT INTO users (username, email, password_hash, role) VALUES (?, ?, ?, ?)',
-      [body.username.slice(0, 64), body.email.slice(0, 255), hash, body.role]
+      'INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)',
+      [body.username.slice(0, 64), hash, body.role]
     );
     if (body.role === 'analyst' && scopes.length) await setUserScopes(result.insertId, scopes);
 
@@ -1007,7 +1006,7 @@ app.post('/api/users', requireRoleApi('super_admin'), async (req, res) => {
     res.status(201).json({ ...rows[0], scopes: body.role === 'analyst' ? scopes : [] });
   } catch (err) {
     if (err.code === 'ER_DUP_ENTRY') {
-      return res.status(409).json({ error: 'username or email already exists' });
+      return res.status(409).json({ error: 'username already exists' });
     }
     console.error('[POST /api/users] error:', err.message);
     res.status(500).json({ error: 'database error' });
@@ -1023,7 +1022,6 @@ app.put('/api/users/:id', requireRoleApi('super_admin'), async (req, res) => {
   const params = [];
 
   if (typeof body.username === 'string' && body.username) { fields.push('username = ?'); params.push(body.username.slice(0, 64)); }
-  if (typeof body.email === 'string' && body.email) { fields.push('email = ?'); params.push(body.email.slice(0, 255)); }
   if (body.role !== undefined) {
     if (!['super_admin', 'analyst', 'viewer'].includes(body.role)) {
       return res.status(400).json({ error: 'role must be one of: super_admin, analyst, viewer' });
@@ -1056,7 +1054,7 @@ app.put('/api/users/:id', requireRoleApi('super_admin'), async (req, res) => {
     res.json({ ...rows[0], scopes: scopesByUser[id] || [] });
   } catch (err) {
     if (err.code === 'ER_DUP_ENTRY') {
-      return res.status(409).json({ error: 'username or email already exists' });
+      return res.status(409).json({ error: 'username already exists' });
     }
     console.error('[PUT /api/users/:id] error:', err.message);
     res.status(500).json({ error: 'database error' });

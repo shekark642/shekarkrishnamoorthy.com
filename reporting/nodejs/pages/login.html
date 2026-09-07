@@ -19,9 +19,6 @@
   button:hover { background: #0369a1; }
   .err { background: #fef2f2; border: 1px solid #fecaca; color: #b91c1c; border-radius: 8px; padding: 0.6rem 0.8rem; font-size: 0.85rem; margin-bottom: 1rem; display: none; }
 </style>
-<script src="https://shekarkrishnamoorthy.com/assets/analytics.js"></script>
-<!-- HW3 custom analytics collector: static/performance/activity data -->
-<script src="https://collector.shekarkrishnamoorthy.com/collector.js" async></script>
 </head>
 <body>
 <div class="card">
@@ -29,8 +26,8 @@
   <p class="sub">Sign in to view your reports.</p>
   <div class="err" id="errBox"></div>
   <form id="loginForm">
-    <label for="usernameOrEmail">Username or Email</label>
-    <input type="text" id="usernameOrEmail" autocomplete="username" required>
+    <label for="username">Username</label>
+    <input type="text" id="username" autocomplete="username" required>
     <label for="password">Password</label>
     <input type="password" id="password" autocomplete="current-password" required>
     <button type="submit">Log In</button>
@@ -48,7 +45,7 @@
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        usernameOrEmail: document.getElementById("usernameOrEmail").value,
+        username: document.getElementById("username").value,
         password: document.getElementById("password").value
       })
     }).then(function (r) {
