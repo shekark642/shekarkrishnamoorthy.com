@@ -131,9 +131,10 @@
       document.getElementById("timeOnPageWrap").innerHTML = '<p class="empty">No visits recorded yet.</p>';
       return;
     }
-    var head = "<tr><th>Session</th><th>Time on Page</th><th>Useful Clicks</th><th>Total Clicks</th></tr>";
+    var head = "<tr><th>Session</th><th>User</th><th>Time on Page</th><th>Useful Clicks</th><th>Total Clicks</th></tr>";
     var body = rows.map(function (r) {
       return "<tr><td class='mono'>" + esc(r.session_id.slice(0, 14)) + "</td>" +
+        "<td>" + (r.userNumber ? "User " + r.userNumber : "—") + "</td>" +
         "<td class='num'>" + fmtDuration(r.durationOnPageSecs) + "</td>" +
         "<td class='num'>" + r.usefulClicks + "</td>" +
         "<td class='num'>" + r.totalClicks + "</td></tr>";
@@ -156,7 +157,8 @@
         return (i > 0 ? '<span class="seq-arrow">&rarr;</span>' : "") +
           '<span class="seq-step">' + (i + 1) + ". " + esc(c.projectTitle) + "</span>";
       }).join("");
-      return '<div class="sequence-row"><div class="sess">' + esc(r.session_id.slice(0, 14)) + '</div>' +
+      return '<div class="sequence-row"><div class="sess">' + esc(r.session_id.slice(0, 14)) +
+        ' &middot; ' + (r.userNumber ? "User " + r.userNumber : "—") + '</div>' +
         '<div class="sequence-path">' + path + "</div></div>";
     }).join("");
   });

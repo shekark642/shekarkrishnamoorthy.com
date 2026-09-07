@@ -113,11 +113,12 @@
       return;
     }
     var pageKeys = Object.keys(PAGE_LABELS);
-    var head = "<tr><th>Session</th><th>Total Time</th>" +
+    var head = "<tr><th>Session</th><th>User</th><th>Total Time</th>" +
       pageKeys.map(function (k) { return "<th>" + PAGE_LABELS[k] + "</th>"; }).join("") +
       "<th>Submitted?</th><th>Useful Clicks</th><th>Total Clicks</th></tr>";
     var body = rows.map(function (r) {
       return "<tr><td class='mono'>" + esc(r.session_id.slice(0, 14)) + "</td>" +
+        "<td>" + (r.userNumber ? "User " + r.userNumber : "—") + "</td>" +
         "<td class='num'>" + fmtDuration(r.durationSecs) + "</td>" +
         pageKeys.map(function (k) {
           var secs = r.pageTime && r.pageTime[k];

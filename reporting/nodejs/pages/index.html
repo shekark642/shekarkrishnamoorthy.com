@@ -86,7 +86,7 @@
     <p style="margin:-0.4rem 0 0.9rem;color:#64748b;font-size:0.82rem">Who and when - every session's scattered behavioral events (enter/activity/exit/submit_click) cross-referenced into one row per visitor.</p>
     <div id="sessionsWrap">
       <table>
-        <thead><tr><th>Session</th><th>User (IP)</th><th>First Seen</th><th>Last Seen</th></tr></thead>
+        <thead><tr><th>Session</th><th>User</th><th>IP</th><th>First Seen</th><th>Last Seen</th></tr></thead>
         <tbody id="sessionRows"></tbody>
       </table>
     </div>
@@ -94,10 +94,10 @@
 
   <div class="card">
     <h2>Distinct Users (behavioral)</h2>
-    <p style="margin:-0.4rem 0 0.9rem;color:#64748b;font-size:0.82rem">Unique visitors by IP address (the only durable identity available for anonymous visitors), and how many sessions each has generated. IPs older than the retention window are anonymized and excluded.</p>
+    <p style="margin:-0.4rem 0 0.9rem;color:#64748b;font-size:0.82rem">Every visitor gets a permanent, sequential "User N" the first time their IP is seen (User 1, User 2, ...) - a stable pseudonym so the rest of the dashboard doesn't have to keep showing raw IPs. IPs older than the retention window are anonymized (the number itself is kept, just no longer linkable to a new visit) and excluded here.</p>
     <div id="distinctUsersWrap">
       <table>
-        <thead><tr><th>User (IP)</th><th>Sessions</th><th>First Seen</th><th>Last Seen</th></tr></thead>
+        <thead><tr><th>User</th><th>IP</th><th>Sessions</th><th>First Seen</th><th>Last Seen</th></tr></thead>
         <tbody id="distinctUserRows"></tbody>
       </table>
     </div>
@@ -252,9 +252,12 @@
     if (isNaN(d.getTime())) return "—";
     return d.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
   }
+  function fmtUser(userNumber) { return userNumber ? "User " + userNumber : "—"; }
+
   fetchScoped("/api/behavioral/sessions?limit=20", function (rows) {
     document.getElementById("sessionRows").innerHTML = rows.map(function (r) {
       return "<tr><td class='mono'>" + r.session_id.slice(0, 12) + "</td>" +
+        "<td>" + fmtUser(r.userNumber) + "</td>" +
         "<td class='mono'>" + esc(r.ip || "—") + "</td>" +
         "<td class='mono'>" + fmtDateTime(r.firstSeen) + "</td>" +
         "<td class='mono'>" + fmtDateTime(r.lastSeen) + "</td></tr>";
@@ -265,11 +268,11 @@
   fetchScoped("/api/behavioral/distinct-users?limit=20", function (rows) {
     document.getElementById("distinctUserRows").innerHTML = rows.length
       ? rows.map(function (r) {
-          return "<tr><td class='mono'>" + esc(r.ip) + "</td><td>" + r.sessionCount + "</td>" +
+          return "<tr><td>" + fmtUser(r.userNumber) + "</td><td class='mono'>" + esc(r.ip) + "</td><td>" + r.sessionCount + "</td>" +
             "<td class='mono'>" + fmtDateTime(r.firstSeen) + "</td>" +
             "<td class='mono'>" + fmtDateTime(r.lastSeen) + "</td></tr>";
         }).join("")
-      : "<tr><td colspan='4' class='no-access'>No users with a live (non-anonymized) IP yet.</td></tr>";
+      : "<tr><td colspan='5' class='no-access'>No users with a live (non-anonymized) IP yet.</td></tr>";
   }, function () { noAccess("distinctUsersWrap", "behavioral"); });
 
   // --- Top 5 session groups (mini cards with device/activity detail + a
@@ -290,6 +293,7 @@
     return '<div class="session-card">' +
       '<h3>#' + rank + ' · ' + esc(r.session_id.slice(0, 14)) + '</h3>' +
       '<table class="kv">' +
+        '<tr><td>User</td><td>' + fmtUser(r.userNumber) + '</td></tr>' +
         '<tr><td>IP</td><td>' + esc(r.ip || "—") + '</td></tr>' +
         '<tr><td>Duration</td><td>' + fmtDuration(r.durationSecs) + '</td></tr>' +
         '<tr><td>Pages visited</td><td>' + r.pagesVisited + '</td></tr>' +

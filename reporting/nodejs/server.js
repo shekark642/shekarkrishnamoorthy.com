@@ -114,6 +114,23 @@ function anonymizeOldIps() {
   }).catch((err) => {
     console.error('[ip retention] error:', err.message);
   });
+
+  // Same policy applied to the visitors table (see hw2/nodejs/server.js's
+  // /collect handler): a "User N" label is meant as a stable pseudonym in
+  // place of showing a raw IP, not a permanent side-channel that outlives
+  // the retention window the raw IP itself is already held to. user_number
+  // and first_seen are kept - the number itself isn't personal data, and
+  // losing it would just make old sessions unlabeled for no privacy
+  // benefit - only the ip column (and therefore the ability to recognize
+  // this visitor again as the same numbered user) is cleared.
+  dbPool.execute(
+    'UPDATE visitors SET ip = NULL WHERE ip IS NOT NULL AND last_seen < NOW() - INTERVAL ? DAY',
+    [IP_RETENTION_DAYS]
+  ).then(([result]) => {
+    if (result.affectedRows) console.log(`[ip retention] anonymized ${result.affectedRows} visitor(s) older than ${IP_RETENTION_DAYS} days`);
+  }).catch((err) => {
+    console.error('[ip retention] visitors error:', err.message);
+  });
 }
 anonymizeOldIps();
 setInterval(anonymizeOldIps, 24 * 60 * 60 * 1000);
@@ -690,15 +707,19 @@ app.get('/api/behavioral/sessions', requireSectionApi('behavioral'), async (req,
 
   try {
     const [rows] = await dbPool.query(
-      `SELECT
-         session_id,
-         SUBSTRING_INDEX(GROUP_CONCAT(ip ORDER BY id DESC SEPARATOR '||'), '||', 1) AS ip,
-         MIN(COALESCE(client_timestamp, server_timestamp)) AS firstSeen,
-         MAX(COALESCE(client_timestamp, server_timestamp)) AS lastSeen
-       FROM events
-       ${whereSql}
-       GROUP BY session_id
-       ORDER BY lastSeen DESC
+      `SELECT s.session_id, s.ip, v.user_number AS userNumber, s.firstSeen, s.lastSeen
+       FROM (
+         SELECT
+           session_id,
+           SUBSTRING_INDEX(GROUP_CONCAT(ip ORDER BY id DESC SEPARATOR '||'), '||', 1) AS ip,
+           MIN(COALESCE(client_timestamp, server_timestamp)) AS firstSeen,
+           MAX(COALESCE(client_timestamp, server_timestamp)) AS lastSeen
+         FROM events
+         ${whereSql}
+         GROUP BY session_id
+       ) s
+       LEFT JOIN visitors v ON v.ip = s.ip
+       ORDER BY s.lastSeen DESC
        LIMIT ?`,
       [...params, limit]
     );
@@ -723,13 +744,15 @@ app.get('/api/behavioral/distinct-users', requireSectionApi('behavioral'), async
   try {
     const [rows] = await dbPool.query(
       `SELECT
-         ip,
-         COUNT(DISTINCT session_id) AS sessionCount,
-         MIN(COALESCE(client_timestamp, server_timestamp)) AS firstSeen,
-         MAX(COALESCE(client_timestamp, server_timestamp)) AS lastSeen
-       FROM events
-       WHERE ip IS NOT NULL AND session_id IS NOT NULL
-       GROUP BY ip
+         e.ip,
+         v.user_number AS userNumber,
+         COUNT(DISTINCT e.session_id) AS sessionCount,
+         MIN(COALESCE(e.client_timestamp, e.server_timestamp)) AS firstSeen,
+         MAX(COALESCE(e.client_timestamp, e.server_timestamp)) AS lastSeen
+       FROM events e
+       LEFT JOIN visitors v ON v.ip = e.ip
+       WHERE e.ip IS NOT NULL AND e.session_id IS NOT NULL
+       GROUP BY e.ip, v.user_number
        ORDER BY sessionCount DESC, lastSeen DESC
        LIMIT ?`,
       [limit]
@@ -878,8 +901,11 @@ app.get('/api/behavioral/top-sessions', requireSectionApi('behavioral'), async (
     const logrocketBySession = {};
     logrocketRows.forEach((r) => { logrocketBySession[r.session_id] = r.url; });
 
+    const userNumberByIp = await lookupUserNumbers(base.map((r) => r.ip));
+
     res.json(base.map((r) => ({
       ...r,
+      userNumber: r.ip ? (userNumberByIp[r.ip] ?? null) : null,
       device: deviceBySession[r.session_id] || null,
       activity: activityBySession[r.session_id] || null,
       logrocketUrl: logrocketBySession[r.session_id] || null
@@ -1080,6 +1106,24 @@ function normalizePageUrl(url) {
   return typeof url === 'string' ? url.replace(/index\.html$/, '') : url;
 }
 
+// Shared by every endpoint that resolves a batch of session/site rows'
+// already-fetched `ip` values into "User N" labels (visitors.user_number) -
+// one shared IN() lookup instead of a bespoke JOIN or repeated inline query
+// in each endpoint, so a future endpoint just calls this rather than
+// re-solving the same problem.
+async function lookupUserNumbers(ips) {
+  const distinctIps = [...new Set(ips.filter(Boolean))];
+  if (!distinctIps.length) return {};
+  const placeholders = distinctIps.map(() => '?').join(',');
+  const [rows] = await dbPool.query(
+    `SELECT ip, user_number FROM visitors WHERE ip IN (${placeholders})`,
+    distinctIps
+  );
+  const byIp = {};
+  rows.forEach((r) => { byIp[r.ip] = r.user_number; });
+  return byIp;
+}
+
 function computePageBreakdown(rows) {
   const blocks = [];
   rows.forEach((r) => {
@@ -1116,6 +1160,7 @@ app.get('/api/behavioral/site-sessions', requireSectionApi('behavioral'), async 
          TIMESTAMPDIFF(SECOND,
            MIN(COALESCE(client_timestamp, server_timestamp)),
            MAX(COALESCE(client_timestamp, server_timestamp))) AS durationSecs,
+         SUBSTRING_INDEX(GROUP_CONCAT(ip ORDER BY id DESC SEPARATOR '||'), '||', 1) AS ip,
          MAX(CASE WHEN type = 'submit_click' THEN 1 ELSE 0 END) = 1 AS submitted
        FROM events
        WHERE type != 'load' AND session_id IN (
@@ -1161,8 +1206,12 @@ app.get('/api/behavioral/site-sessions', requireSectionApi('behavioral'), async 
       clicksBySession[r.session_id] = c;
     });
 
+    const userNumberByIp = await lookupUserNumbers(base.map((r) => r.ip));
+
     res.json(base.map((r) => ({
       session_id: r.session_id,
+      ip: r.ip,
+      userNumber: r.ip ? (userNumberByIp[r.ip] ?? null) : null,
       firstSeen: r.firstSeen,
       lastSeen: r.lastSeen,
       durationSecs: r.durationSecs,
@@ -1199,11 +1248,14 @@ app.get('/api/behavioral/page-visits', requireSectionApi('behavioral'), async (r
 
   try {
     const [sessionIdRows] = await dbPool.query(
-      'SELECT DISTINCT session_id FROM events WHERE url = ? AND session_id IS NOT NULL',
+      `SELECT session_id, SUBSTRING_INDEX(GROUP_CONCAT(ip ORDER BY id DESC SEPARATOR '||'), '||', 1) AS ip
+       FROM events WHERE url = ? AND session_id IS NOT NULL GROUP BY session_id`,
       [pageUrl]
     );
     if (!sessionIdRows.length) return res.json([]);
     const ids = sessionIdRows.map((r) => r.session_id);
+    const ipBySession = {};
+    sessionIdRows.forEach((r) => { ipBySession[r.session_id] = r.ip; });
     const placeholders = ids.map(() => '?').join(',');
 
     // Full session context is needed here (not just this page's own rows) -
@@ -1234,12 +1286,17 @@ app.get('/api/behavioral/page-visits', requireSectionApi('behavioral'), async (r
       clicksBySession[r.session_id] = c;
     });
 
+    const userNumberByIp = await lookupUserNumbers(Object.values(ipBySession));
+
     const results = ids.map((sessionId) => {
       const pageTime = computePageBreakdown(eventsBySession[sessionId] || []);
       const durationOnPage = pageTime[normalizedTarget] || 0;
       const clicks = clicksBySession[sessionId] || { total: 0, useful: 0 };
+      const ip = ipBySession[sessionId];
       return {
         session_id: sessionId,
+        ip: ip || null,
+        userNumber: ip ? (userNumberByIp[ip] ?? null) : null,
         durationOnPageSecs: Math.round(durationOnPage),
         totalClicks: clicks.total,
         usefulClicks: clicks.useful
@@ -1285,7 +1342,9 @@ app.get('/api/behavioral/project-click-sequence', requireSectionApi('behavioral'
   const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 20, 1), 200);
   try {
     const [sessionRows] = await dbPool.query(
-      `SELECT session_id, MAX(COALESCE(client_timestamp, server_timestamp)) AS lastClick
+      `SELECT session_id,
+              SUBSTRING_INDEX(GROUP_CONCAT(ip ORDER BY id DESC SEPARATOR '||'), '||', 1) AS ip,
+              MAX(COALESCE(client_timestamp, server_timestamp)) AS lastClick
        FROM events
        WHERE type = 'project_click' AND session_id IS NOT NULL
        GROUP BY session_id
@@ -1310,7 +1369,12 @@ app.get('/api/behavioral/project-click-sequence', requireSectionApi('behavioral'
     clickRows.forEach((r) => {
       (bySession[r.session_id] = bySession[r.session_id] || []).push({ projectTitle: r.projectTitle, timestamp: r.ts });
     });
-    res.json(sessionRows.map((r) => ({ session_id: r.session_id, clicks: bySession[r.session_id] || [] })));
+    const userNumberByIp = await lookupUserNumbers(sessionRows.map((r) => r.ip));
+    res.json(sessionRows.map((r) => ({
+      session_id: r.session_id,
+      userNumber: r.ip ? (userNumberByIp[r.ip] ?? null) : null,
+      clicks: bySession[r.session_id] || []
+    })));
   } catch (err) {
     console.error('[GET /api/behavioral/project-click-sequence] error:', err.message);
     res.status(500).json({ error: 'database error' });

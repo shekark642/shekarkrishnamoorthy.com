@@ -157,6 +157,7 @@
     return '<div class="visit-card">' +
       '<h3>' + esc(r.session_id.slice(0, 14)) + '</h3>' +
       '<table class="kv">' +
+        '<tr><td>User</td><td>' + (r.userNumber ? "User " + r.userNumber : "—") + '</td></tr>' +
         '<tr><td>Time on page</td><td>' + fmtDuration(r.durationOnPageSecs) + '</td></tr>' +
         '<tr><td>Useful clicks</td><td>' + r.usefulClicks + '</td></tr>' +
         '<tr><td>Total clicks</td><td>' + r.totalClicks + '</td></tr>' +

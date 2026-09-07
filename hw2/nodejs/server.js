@@ -572,6 +572,20 @@ app.post('/collect', collectLimiter, async (req, res) => {
         JSON.stringify(payload)
       ]
     );
+
+    // Assigns this IP a permanent, sequential "user number" the first time
+    // it's ever seen (User 1, User 2, ...) - reporting/nodejs's dashboards
+    // read this table to label sessions with a stable pseudonym instead of
+    // a raw IP. Fired without awaiting: it's bookkeeping on the side, not
+    // part of what makes a beacon "received" - a failure here should never
+    // turn into a 500 or a JSONL-fallback write for the whole event.
+    if (payload.ip) {
+      dbPool.execute(
+        'INSERT INTO visitors (ip) VALUES (?) ON DUPLICATE KEY UPDATE last_seen = CURRENT_TIMESTAMP',
+        [payload.ip]
+      ).catch((err) => console.error('[collect] visitor upsert failed:', err.message));
+    }
+
     res.sendStatus(204); // No Content - confirms receipt, nothing to return
   } catch (err) {
     // Never lose a beacon just because the DB hiccuped - fall back to the
