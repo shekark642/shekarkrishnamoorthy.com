@@ -125,6 +125,14 @@
       // reads false if a bot has deliberately patched it out - the User-Agent
       // regex on the server side is the fallback for that case).
       webdriver: navigator.webdriver === true,
+      // Two more cheap, well-established headless indicators: default
+      // headless configs commonly report zero plugins and either zero or
+      // exactly one language, unlike a normal browser profile. Weak signals
+      // individually (privacy-hardened real browsers can look like this
+      // too), which is exactly why the server combines them with weighted
+      // scoring instead of trusting any single one.
+      pluginsCount: navigator.plugins ? navigator.plugins.length : 0,
+      languagesCount: navigator.languages ? navigator.languages.length : 0,
       language: navigator.language,
       cookiesAccepted: navigator.cookieEnabled,
       // If this script is running at all, JavaScript is enabled by

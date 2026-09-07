@@ -74,7 +74,7 @@
   </div>
 
   <div class="card">
-    <h2>Page Load Time Trend (performance, last 20 loads)</h2>
+    <h2>Page Load Time Trend (performance, last 50 users)</h2>
     <div id="loadTimeChartWrap"><canvas id="loadTimeChart"></canvas></div>
   </div>
 
@@ -213,7 +213,7 @@
   }, function () { renderStats(); });
 
   // --- Page Load Time Trend (line chart - values over time/sequence) ---
-  fetchScoped("/api/performance/events?limit=20", function (rows) {
+  fetchScoped("/api/performance/events?limit=50", function (rows) {
     var ordered = rows.slice().reverse(); // oldest to newest, left to right
     var labels = ordered.map(function (r, i) { return "#" + (i + 1); });
     var values = ordered.map(function (r) { return r.total_load_time_ms; });
@@ -287,7 +287,8 @@
         '<tr><td>Events</td><td>' + r.eventCount + '</td></tr>' +
         '<tr><td>Exit page</td><td>' + esc((r.exitUrl || "").replace(/^https?:\/\//, "")) + '</td></tr>' +
         '<tr><td>Submitted?</td><td>' + (r.submitted ? "✅ yes" : "— no") + '</td></tr>' +
-        '<tr><td>Type</td><td>' + (d.isBot ? "🤖 Bot" : "🧑 Human") + '</td></tr>' +
+        '<tr><td>Type</td><td>' + (d.isBot ? "🤖 Bot" : "🧑 Human") +
+          ' <a href="#" class="bot-score-link" data-session="' + esc(r.session_id) + '" style="font-size:0.7rem">(details)</a></td></tr>' +
         '<tr><td>Browser / OS</td><td>' + esc(parseUA(d.userAgent)) + '</td></tr>' +
         '<tr><td>Screen</td><td>' + (d.screenWidth || "?") + '×' + (d.screenHeight || "?") + '</td></tr>' +
         '<tr><td>Connection</td><td>' + esc(d.connectionType || "unknown") + '</td></tr>' +
@@ -297,11 +298,34 @@
         '<tr><td>Idle periods</td><td>' + (a.totalIdlePeriods || 0) + '</td></tr>' +
         '<tr><td>Errors</td><td>' + (a.totalErrors || 0) + '</td></tr>' +
       '</table>' +
+      '<div class="bot-score-box" style="display:none;font-size:0.74rem;color:#334155;margin-top:0.5rem;border-top:1px solid #eef2f7;padding-top:0.5rem"></div>' +
       '<button class="btn-replay" data-session="' + esc(r.session_id) + '" ' +
         'data-w="' + (d.windowWidth || 1200) + '" data-h="' + (d.windowHeight || 800) + '">▶ Replay mouse activity</button>' +
       '<canvas class="replay-canvas" width="400" height="160"></canvas>' +
     '</div>';
   }
+
+  document.addEventListener("click", function (e) {
+    var link = e.target.closest && e.target.closest(".bot-score-link");
+    if (!link) return;
+    e.preventDefault();
+    var box = link.closest(".session-card").querySelector(".bot-score-box");
+    if (box.style.display === "block") { box.style.display = "none"; return; }
+    box.style.display = "block";
+    box.textContent = "Loading...";
+    fetch("/api/behavioral/bot-score/" + encodeURIComponent(link.dataset.session))
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (data.error) { box.textContent = data.error; return; }
+        var verdictLabel = data.verdict === "likely_bot" ? "Likely bot" : data.verdict === "uncertain" ? "Uncertain" : "Likely human";
+        box.innerHTML = "<strong>Score: " + data.score + "/100 — " + verdictLabel + "</strong><ul style='margin:0.3rem 0 0;padding-left:1.1rem'>" +
+          data.signals.filter(function (s) { return s.triggered; }).map(function (s) {
+            return "<li>" + esc(s.signal) + " (+" + s.weight + "): " + esc(s.note) + "</li>";
+          }).join("") +
+          (data.signals.every(function (s) { return !s.triggered; }) ? "<li>No signals triggered.</li>" : "") +
+        "</ul>";
+      });
+  });
 
   // Animates through a time-merged list of moves+clicks on a fixed short
   // budget (~6s total) regardless of the real session length, so a 20-

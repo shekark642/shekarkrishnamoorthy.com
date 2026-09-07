@@ -857,6 +857,126 @@ app.get('/api/behavioral/session-mouse/:sessionId', requireSectionApi('behaviora
   }
 });
 
+// --- Advanced bot scoring ---
+//
+// The is_bot column is a fast, single-shot check (navigator.webdriver +
+// a User-Agent regex) - both are things a bot author has to remember to
+// spoof, and stealth automation tooling routinely does. This is a second,
+// heavier classifier that combines multiple independent signal
+// categories, weighted by how hard each is to fake, into one 0-100
+// score instead of a single opaque boolean:
+//
+//   Self-reported environment (cheap to spoof, so low weight each):
+//     - navigator.webdriver set                              (35)
+//     - User-Agent matches a known bot/tool pattern           (25)
+//     - zero browser plugins reported                         (8)
+//     - zero or one navigator.languages entries                (7)
+//
+//   Behavioral trajectory (hard to fake - this is the actual "advanced"
+//   part, since it reuses the raw mouseMoves/mouseClicks this site
+//   already records rather than anything newly self-reported):
+//     - clicks recorded with literally zero mouse movement     (15)
+//       ever in the session - a human has to move the cursor
+//       somewhere before clicking it; a script that calls
+//       .click() directly never does.
+//     - a high fraction of consecutive movement segments are    (7)
+//       near-perfectly straight lines (< ~3.6 degrees of
+//       direction change) - real hand movement constantly
+//       micro-corrects; naive programmatic movement between
+//       two points in a straight line does not.
+//     - suspiciously regular timing between recorded mouse       (3)
+//       moves (low coefficient of variation) - human timing is
+//       bursty; scripted timing is often near-constant.
+//
+// Weights sum to 100. >=60 is reported as "likely bot", 30-59 as
+// "uncertain", <30 as "likely human" - every contributing signal is
+// returned too, so the classification is never a black box.
+function collinearFraction(moves) {
+  let straight = 0;
+  let total = 0;
+  for (let i = 2; i < moves.length; i++) {
+    const a = moves[i - 2], b = moves[i - 1], c = moves[i];
+    const dx1 = b.x - a.x, dy1 = b.y - a.y;
+    const dx2 = c.x - b.x, dy2 = c.y - b.y;
+    const len1 = Math.hypot(dx1, dy1), len2 = Math.hypot(dx2, dy2);
+    if (len1 < 2 || len2 < 2) continue; // ignore near-stationary micro-jitter
+    total++;
+    const cosAngle = (dx1 * dx2 + dy1 * dy2) / (len1 * len2);
+    if (cosAngle > 0.998) straight++; // < ~3.6 degrees of direction change
+  }
+  return total >= 5 ? straight / total : null; // not enough data to judge below that
+}
+
+function timingCoefficientOfVariation(moves) {
+  if (moves.length < 6) return null;
+  const intervals = [];
+  for (let i = 1; i < moves.length; i++) {
+    const dt = new Date(moves[i].timestamp) - new Date(moves[i - 1].timestamp);
+    if (dt > 0 && dt < 5000) intervals.push(dt); // ignore gaps (tab switches, idle)
+  }
+  if (intervals.length < 5) return null;
+  const mean = intervals.reduce((s, v) => s + v, 0) / intervals.length;
+  const variance = intervals.reduce((s, v) => s + (v - mean) ** 2, 0) / intervals.length;
+  return mean > 0 ? Math.sqrt(variance) / mean : null;
+}
+
+const BOT_UA_RE = /bot|crawl|spider|slurp|headless|phantom|selenium|puppeteer|playwright|curl\/|wget\/|python-requests|scrapy|go-http-client|okhttp|facebookexternalhit|bingpreview|whatsapp|telegrambot/i;
+
+app.get('/api/behavioral/bot-score/:sessionId', requireSectionApi('behavioral'), async (req, res) => {
+  const sessionId = String(req.params.sessionId).slice(0, 64);
+  try {
+    const [loadRows] = await dbPool.query(
+      "SELECT payload FROM events WHERE type = 'load' AND session_id = ? ORDER BY id ASC LIMIT 1",
+      [sessionId]
+    );
+    const [activityRows] = await dbPool.query(
+      "SELECT payload FROM events WHERE type = 'activity' AND session_id = ? ORDER BY id ASC",
+      [sessionId]
+    );
+    if (!loadRows.length) return res.status(404).json({ error: 'no load event for this session yet' });
+
+    const staticData = (loadRows[0].payload || {}).staticData || {};
+    let moves = [];
+    let clicks = [];
+    activityRows.forEach((r) => {
+      const p = r.payload || {};
+      if (Array.isArray(p.mouseMoves)) moves = moves.concat(p.mouseMoves);
+      if (Array.isArray(p.mouseClicks)) clicks = clicks.concat(p.mouseClicks);
+    });
+    moves.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+
+    const signals = [];
+    var score = 0;
+
+    function addSignal(name, weight, triggered, note) {
+      if (triggered) score += weight;
+      signals.push({ signal: name, weight: weight, triggered: !!triggered, note: note });
+    }
+
+    addSignal('navigator.webdriver', 35, staticData.webdriver === true, 'Set by default under Selenium/Puppeteer/Playwright.');
+    addSignal('user_agent_pattern', 25, BOT_UA_RE.test(staticData.userAgent || ''), 'Matches a known bot/crawler/tool substring.');
+    addSignal('zero_plugins', 8, staticData.pluginsCount === 0, 'navigator.plugins.length === 0 - common in default headless configs.');
+    addSignal('minimal_languages', 7, typeof staticData.languagesCount === 'number' && staticData.languagesCount <= 1, 'navigator.languages has 0-1 entries.');
+
+    const clicksWithNoMovement = clicks.length > 0 && moves.length === 0;
+    addSignal('clicks_without_movement', 15, clicksWithNoMovement, 'Clicks recorded but zero mouse movement ever - a human has to move the cursor there first.');
+
+    const straightness = collinearFraction(moves);
+    addSignal('linear_movement', 7, straightness !== null && straightness > 0.6,
+      straightness !== null ? 'Fraction of near-perfectly-straight movement segments: ' + (straightness * 100).toFixed(1) + '%.' : 'Not enough movement data to judge.');
+
+    const timingCV = timingCoefficientOfVariation(moves);
+    addSignal('regular_timing', 3, timingCV !== null && timingCV < 0.15,
+      timingCV !== null ? 'Coefficient of variation of move timing: ' + timingCV.toFixed(3) + ' (human timing is typically well above 0.3).' : 'Not enough movement data to judge.');
+
+    const verdict = score >= 60 ? 'likely_bot' : score >= 30 ? 'uncertain' : 'likely_human';
+    res.json({ sessionId: sessionId, score: score, verdict: verdict, signals: signals });
+  } catch (err) {
+    console.error('[GET /api/behavioral/bot-score/:sessionId] error:', err.message);
+    res.status(500).json({ error: 'database error' });
+  }
+});
+
 // --- Saved reports ---
 //
 // "A viewer can only look at saved reports, which are just set views, even
