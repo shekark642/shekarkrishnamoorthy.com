@@ -42,11 +42,7 @@ on failure (a JSON 401/403 vs. a redirect to `/login.html`).
   check a session, so the proxy was expanded to send the *entire* vhost to
   Node, which now owns serving every page and can redirect to `/login.html`
   before a byte of protected content is ever sent.
-- Admin-only routes (`/users.html`, `/api/users/*`) add one more check
-  (`isAdmin`) on top of the same session — confirmed live that a basic
-  account gets a 403 page hitting `/users.html` directly, and that the
-  "User Management" nav link is only rendered on the dashboard for admins
-  (checked via `GET /auth/me`, not just assumed client-side).
+
 
 ### Dashboard
 
