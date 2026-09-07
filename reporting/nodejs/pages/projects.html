@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Projects Page Metrics — Analytics</title>
+<link rel="icon" type="image/svg+xml" href="https://shekarkrishnamoorthy.com/favicon.svg">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.5.1/chart.umd.min.js"></script>
+<style>
+  body { font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif; background: #f8fafc; color: #0f172a; margin: 0; padding: 2rem 1.5rem 4rem; overflow-x: hidden; }
+  main { max-width: 1000px; margin: 0 auto; }
+  header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 0.8rem; }
+  header h1 { font-size: 1.35rem; margin: 0 0 0.2rem; }
+  header p { margin: 0; color: #64748b; font-size: 0.85rem; }
+  nav a { color: #0284c7; text-decoration: none; font-size: 0.88rem; margin-left: 1.1rem; font-weight: 600; }
+
+  .card { background: #fff; border: 1px solid #dbe3ee; border-radius: 16px; padding: 1.5rem 1.75rem; margin-bottom: 1.5rem; }
+  .card h2 { font-size: 1rem; margin: 0 0 0.3rem; }
+  .card > p.hint { margin: 0 0 0.9rem; color: #64748b; font-size: 0.82rem; }
+  .card canvas { max-height: 280px; }
+
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+  th, td { text-align: left; padding: 0.55rem 0.7rem; border-bottom: 1px solid #eef2f7; }
+  th { color: #475569; font-weight: 600; }
+  td.mono { font-family: ui-monospace, Consolas, monospace; font-size: 0.78rem; }
+  td.num { text-align: right; }
+  .empty, .no-access { color: #94a3b8; font-size: 0.85rem; font-style: italic; }
+
+  .sequence-row { border: 1px solid #dbe3ee; border-radius: 10px; padding: 0.7rem 0.9rem; margin-bottom: 0.7rem; }
+  .sequence-row .sess { font-family: ui-monospace, Consolas, monospace; font-size: 0.76rem; color: #64748b; margin-bottom: 0.4rem; }
+  .sequence-path { display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem; font-size: 0.82rem; }
+  .seq-step { background: #eff6ff; color: #0284c7; border-radius: 6px; padding: 0.2rem 0.55rem; font-weight: 600; }
+  .seq-arrow { color: #94a3b8; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div>
+      <h1>Projects Page Metrics</h1>
+      <p>Time on page, project click order, and overall project popularity - shekarkrishnamoorthy.com/important/projects.html.</p>
+    </div>
+    <nav>
+      <a href="/index.html">&larr; Dashboard</a>
+      <a href="/reports.html">Saved Reports</a>
+      <a href="#" id="adminLink" style="display:none">User Management</a>
+      <a href="#" id="logoutLink">Log out</a>
+    </nav>
+  </header>
+
+  <div class="card">
+    <h2>Most Popular Projects</h2>
+    <p class="hint">Total clicks per project, across all visitors. Reads project names straight from click events, so a newly added project on the page shows up here automatically once someone clicks it.</p>
+    <div id="popularityWrap"><canvas id="popularityChart"></canvas></div>
+  </div>
+
+  <div class="card">
+    <h2>Time on Page</h2>
+    <p class="hint">How long each visit spent specifically on the Projects page, and how many of their clicks landed on something interactive.</p>
+    <div class="table-wrap" id="timeOnPageWrap"><p class="empty">Loading...</p></div>
+  </div>
+
+  <div class="card">
+    <h2>Project Click Order</h2>
+    <p class="hint">For each visitor who clicked at least one project, which ones - in the order they clicked them.</p>
+    <div id="sequenceWrap"><p class="empty">Loading...</p></div>
+  </div>
+</main>
+
+<script>
+(function () {
+  "use strict";
+  var PAGE_URL = "https://shekarkrishnamoorthy.com/important/projects.html";
+
+  function esc(s) { return String(s).replace(/</g, "&lt;"); }
+  function fmtDuration(secs) {
+    if (secs === null || secs === undefined) return "—";
+    if (secs < 60) return secs + "s";
+    return Math.floor(secs / 60) + "m " + (secs % 60) + "s";
+  }
+
+  fetch("/auth/me").then(function (r) { return r.json(); }).then(function (me) {
+    if (me.role === "super_admin") {
+      var link = document.getElementById("adminLink");
+      link.style.display = "inline";
+      link.href = "/users.html";
+    }
+  });
+
+  document.getElementById("logoutLink").addEventListener("click", function (e) {
+    e.preventDefault();
+    fetch("/auth/logout", { method: "POST" }).then(function () { window.location.href = "/logout.html"; });
+  });
+
+  // --- Most Popular Projects (bar chart) ---
+  fetch("/api/behavioral/project-popularity").then(function (r) {
+    if (r.status === 403) { document.getElementById("popularityWrap").innerHTML = '<p class="no-access">No access to the "behavioral" section.</p>'; return null; }
+    return r.json();
+  }).then(function (rows) {
+    if (!rows) return;
+    if (!rows.length) {
+      document.getElementById("popularityWrap").innerHTML = '<p class="empty">No project clicks recorded yet.</p>';
+      return;
+    }
+    new Chart(document.getElementById("popularityChart"), {
+      type: "bar",
+      data: {
+        labels: rows.map(function (r) { return r.projectTitle; }),
+        datasets: [{
+          label: "Clicks",
+          data: rows.map(function (r) { return r.clicks; }),
+          backgroundColor: "#0284c7"
+        }]
+      },
+      options: {
+        responsive: true,
+        plugins: { legend: { display: false } },
+        scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }
+      }
+    });
+  });
+
+  // --- Time on Page ---
+  fetch("/api/behavioral/page-visits?url=" + encodeURIComponent(PAGE_URL) + "&minSeconds=0&limit=100").then(function (r) {
+    if (r.status === 403) { document.getElementById("timeOnPageWrap").innerHTML = '<p class="no-access">No access to the "behavioral" section.</p>'; return null; }
+    return r.json();
+  }).then(function (rows) {
+    if (!rows) return;
+    if (!rows.length) {
+      document.getElementById("timeOnPageWrap").innerHTML = '<p class="empty">No visits recorded yet.</p>';
+      return;
+    }
+    var head = "<tr><th>Session</th><th>Time on Page</th><th>Useful Clicks</th><th>Total Clicks</th></tr>";
+    var body = rows.map(function (r) {
+      return "<tr><td class='mono'>" + esc(r.session_id.slice(0, 14)) + "</td>" +
+        "<td class='num'>" + fmtDuration(r.durationOnPageSecs) + "</td>" +
+        "<td class='num'>" + r.usefulClicks + "</td>" +
+        "<td class='num'>" + r.totalClicks + "</td></tr>";
+    }).join("");
+    document.getElementById("timeOnPageWrap").innerHTML = "<table><thead>" + head + "</thead><tbody>" + body + "</tbody></table>";
+  });
+
+  // --- Project Click Order (chronological, per session) ---
+  fetch("/api/behavioral/project-click-sequence?limit=20").then(function (r) {
+    if (r.status === 403) { document.getElementById("sequenceWrap").innerHTML = '<p class="no-access">No access to the "behavioral" section.</p>'; return null; }
+    return r.json();
+  }).then(function (rows) {
+    if (!rows) return;
+    if (!rows.length) {
+      document.getElementById("sequenceWrap").innerHTML = '<p class="empty">No project clicks recorded yet.</p>';
+      return;
+    }
+    document.getElementById("sequenceWrap").innerHTML = rows.map(function (r) {
+      var path = r.clicks.map(function (c, i) {
+        return (i > 0 ? '<span class="seq-arrow">&rarr;</span>' : "") +
+          '<span class="seq-step">' + (i + 1) + ". " + esc(c.projectTitle) + "</span>";
+      }).join("");
+      return '<div class="sequence-row"><div class="sess">' + esc(r.session_id.slice(0, 14)) + '</div>' +
+        '<div class="sequence-path">' + path + "</div></div>";
+    }).join("");
+  });
+})();
+</script>
+</body>
+</html>

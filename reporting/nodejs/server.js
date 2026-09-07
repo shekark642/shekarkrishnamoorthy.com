@@ -1255,6 +1255,68 @@ app.get('/api/behavioral/page-visits', requireSectionApi('behavioral'), async (r
   }
 });
 
+// GET /api/behavioral/project-popularity - click counts per project on the
+// Projects page, most-clicked first. projectTitle is read straight out of
+// each project_click event's own payload (see projects.html) rather than
+// from any list of known project names kept here - a newly added project
+// on the page just starts appearing in this breakdown the first time
+// someone clicks it, with nothing to update server-side.
+app.get('/api/behavioral/project-popularity', requireSectionApi('behavioral'), async (req, res) => {
+  try {
+    const [rows] = await dbPool.query(`
+      SELECT JSON_UNQUOTE(JSON_EXTRACT(payload, '$.projectTitle')) AS projectTitle, COUNT(*) AS clicks
+      FROM events
+      WHERE type = 'project_click' AND JSON_EXTRACT(payload, '$.projectTitle') IS NOT NULL
+      GROUP BY projectTitle
+      ORDER BY clicks DESC
+    `);
+    res.json(rows);
+  } catch (err) {
+    console.error('[GET /api/behavioral/project-popularity] error:', err.message);
+    res.status(500).json({ error: 'database error' });
+  }
+});
+
+// GET /api/behavioral/project-click-sequence?limit= - for each session that
+// clicked at least one project, the ordered list of which projects (and
+// when) it clicked - the chronological click path per visitor, as opposed
+// to project-popularity's aggregate counts above.
+app.get('/api/behavioral/project-click-sequence', requireSectionApi('behavioral'), async (req, res) => {
+  const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 20, 1), 200);
+  try {
+    const [sessionRows] = await dbPool.query(
+      `SELECT session_id, MAX(COALESCE(client_timestamp, server_timestamp)) AS lastClick
+       FROM events
+       WHERE type = 'project_click' AND session_id IS NOT NULL
+       GROUP BY session_id
+       ORDER BY lastClick DESC
+       LIMIT ?`,
+      [limit]
+    );
+    if (!sessionRows.length) return res.json([]);
+    const ids = sessionRows.map((r) => r.session_id);
+    const placeholders = ids.map(() => '?').join(',');
+
+    const [clickRows] = await dbPool.query(
+      `SELECT session_id,
+              JSON_UNQUOTE(JSON_EXTRACT(payload, '$.projectTitle')) AS projectTitle,
+              COALESCE(client_timestamp, server_timestamp) AS ts
+       FROM events
+       WHERE type = 'project_click' AND session_id IN (${placeholders})
+       ORDER BY session_id, id ASC`,
+      ids
+    );
+    const bySession = {};
+    clickRows.forEach((r) => {
+      (bySession[r.session_id] = bySession[r.session_id] || []).push({ projectTitle: r.projectTitle, timestamp: r.ts });
+    });
+    res.json(sessionRows.map((r) => ({ session_id: r.session_id, clicks: bySession[r.session_id] || [] })));
+  } catch (err) {
+    console.error('[GET /api/behavioral/project-click-sequence] error:', err.message);
+    res.status(500).json({ error: 'database error' });
+  }
+});
+
 // --- Saved reports ---
 //
 // "A viewer can only look at saved reports, which are just set views, even
@@ -1720,6 +1782,10 @@ app.get('/music.html', requireRolePage('super_admin', 'analyst'), (req, res) => 
 
 app.get('/about-me.html', requireRolePage('super_admin', 'analyst'), (req, res) => {
   res.sendFile(path.join(PAGES_DIR, 'about-me.html'));
+});
+
+app.get('/projects.html', requireRolePage('super_admin', 'analyst'), (req, res) => {
+  res.sendFile(path.join(PAGES_DIR, 'projects.html'));
 });
 
 // Reachable by all three roles: it's the viewer's only page, but analysts

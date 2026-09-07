@@ -175,6 +175,18 @@
         </div>
       </a>
     `).join("");
+
+    // Reports which project was clicked, and in what order relative to any
+    // other project clicks in the same session - reads p.title straight off
+    // the same array render() already built the cards from, so a new
+    // project entry above just starts showing up in the analytics with zero
+    // extra wiring. Attached per-card (not delegated with a data- attribute)
+    // so project titles never have to round-trip through an HTML attribute.
+    Array.from(grid.children).forEach((card, i) => {
+      card.addEventListener("click", function () {
+        if (window.collector) window.collector.track("project_click", { projectTitle: sorted[i].title });
+      });
+    });
   }
 
   sortSelect.addEventListener("change", () => render(sortSelect.value));
