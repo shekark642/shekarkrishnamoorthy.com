@@ -135,21 +135,24 @@
 </main>
 
 <script>
-  // Skeleton project data - each real project becomes one object here.
-  // year: numeric, used by the "Newest to Oldest" sort.
-  // coolness: 1-10, used by the "Coolest to Lamest" sort - purely a personal
-  //   ranking you set per project, unrelated to year.
-  // image: leave "" for a placeholder box until a real thumbnail exists.
-  // url: leave "#" until the project has a real link.
+  // To add a new project, copy this object and fill it in - that's the whole process:
+  // {
+  //   title: "",       // card heading
+  //   year: 0,         // numeric, drives the "Newest to Oldest" sort
+  //   coolness: 5,     // 1-10, drives the "Coolest to Lamest" sort - your own
+  //                    //   ranking, unrelated to year (5 is a neutral default)
+  //   image: "/images/your-thumb.png",  // "" shows a placeholder box instead
+  //   desc: "",        // one-line description shown on the card
+  //   url: "#",        // where the card links to ("#" until there's a real link)
+  //   broken: false,   // optional - set true to show a red "broken" badge
+  // }
+  // Images live in the repo's root images/ folder, referenced as /images/<file>.
   const projects = [
-    { title: "Homework Log", year: 2026, coolness: 5, image: "", desc: "Assignments completed for CSE135, with links and short descriptions.", url: "https://shekarkrishnamoorthy.com/homework.html" },
+    { title: "Homework Log", year: 2026, coolness: 5, image: "/images/homework.png", desc: "Assignments completed for CSE135, with links and short descriptions.", url: "https://shekarkrishnamoorthy.com/homework.html" },
     { title: "Analysis of Cardiovascular and Respiratory Health", year: 2025, coolness: 8, image: "https://shekark642.github.io/portfolio/projects/images/cardio_and_resp_analysis_ss.png", desc: "A data science course project: an interactive site that lets users compare themselves to similar athletes to set a baseline for improvement.", url: "https://shekark642.github.io/final106/" },
     { title: "Bikewatching in Boston", year: 2025, coolness: 9, image: "https://shekark642.github.io/portfolio/projects/images/bikewatching_project_ss.png", desc: "An interactive map analyzing bike lane and station traffic/flow across Boston at different times of day.", url: "https://shekark642.github.io/BostonBikeTraffic/" },
     { title: "ATP Sports Analytics Pipeline", year: 2025, coolness: 10, image: "/images/atp-thumb.png", desc: "A PyTorch model using historical match data and LLM-generated player tags to predict professional tennis match outcomes against bookmaker odds.", url: "https://colab.research.google.com/drive/1hOR4hbYbc6bKKdUQ08g_rUv6CZI9pTa5#scrollTo=1FROmf5Waz_Y" },
     { title: "Top Headlines", year: 2026, coolness: 7, image: "/images/news-thumb.png", broken: true, desc: "A live news reader pulling top headlines from NewsAPI, filterable by category and sortable by popularity or date.", url: "https://shekarkrishnamoorthy.com/important/news.html" },
-    { title: "Project 6", year: 2021, coolness: 7, image: "", desc: "Description coming soon.", url: "#" },
-    { title: "Project 7", year: 2020, coolness: 4, image: "", desc: "Description coming soon.", url: "#" },
-    { title: "Project 8", year: 2019, coolness: 8, image: "", desc: "Description coming soon.", url: "#" },
   ];
 
   const grid = document.getElementById("projectGrid");
