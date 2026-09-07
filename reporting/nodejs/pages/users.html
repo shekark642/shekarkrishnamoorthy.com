@@ -7,7 +7,7 @@
 <link rel="icon" type="image/svg+xml" href="https://shekarkrishnamoorthy.com/favicon.svg">
 <style>
   body { font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif; background: #f8fafc; color: #0f172a; margin: 0; padding: 2rem 1.5rem 4rem; }
-  main { max-width: 860px; margin: 0 auto; }
+  main { max-width: 900px; margin: 0 auto; }
   header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 0.6rem; }
   header h1 { font-size: 1.3rem; margin: 0; }
   nav a { color: #0284c7; text-decoration: none; font-size: 0.88rem; margin-left: 1rem; font-weight: 600; }
@@ -16,8 +16,10 @@
   th, td { text-align: left; padding: 0.55rem 0.7rem; border-bottom: 1px solid #eef2f7; }
   th { color: #475569; font-weight: 600; }
   .badge { display: inline-block; padding: 0.15rem 0.55rem; border-radius: 999px; font-size: 0.72rem; font-weight: 700; text-transform: uppercase; }
-  .badge.admin { background: #fef3c7; color: #92400e; }
-  .badge.basic { background: #e2e8f0; color: #475569; }
+  .badge.super_admin { background: #fef3c7; color: #92400e; }
+  .badge.analyst { background: #dbeafe; color: #1e40af; }
+  .badge.viewer { background: #e2e8f0; color: #475569; }
+  .scope-tag { display: inline-block; background: #f1f5f9; color: #334155; border-radius: 6px; padding: 0.1rem 0.45rem; font-size: 0.72rem; margin-right: 0.25rem; }
   button { border: none; border-radius: 6px; padding: 0.35rem 0.7rem; font-size: 0.8rem; font-weight: 600; cursor: pointer; margin-right: 0.3rem; }
   .btn-edit { background: #e0f2fe; color: #0369a1; }
   .btn-edit:hover { background: #bae6fd; }
@@ -28,16 +30,20 @@
 
   .modal-backdrop { display: none; position: fixed; inset: 0; background: rgba(15,23,42,0.5); align-items: center; justify-content: center; z-index: 100; }
   .modal-backdrop.open { display: flex; }
-  .modal { background: #fff; border-radius: 14px; padding: 1.75rem; width: 100%; max-width: 380px; }
+  .modal { background: #fff; border-radius: 14px; padding: 1.75rem; width: 100%; max-width: 400px; }
   .modal h2 { font-size: 1.05rem; margin-top: 0; }
   .modal label { display: block; font-size: 0.83rem; font-weight: 600; color: #334155; margin: 0.7rem 0 0.25rem; }
-  .modal input[type="text"], .modal input[type="email"], .modal input[type="password"] { width: 100%; padding: 0.5rem 0.7rem; border: 1px solid #dbe3ee; border-radius: 7px; font-size: 0.88rem; box-sizing: border-box; }
-  .modal .checkrow { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.8rem; }
+  .modal input[type="text"], .modal input[type="email"], .modal input[type="password"], .modal select {
+    width: 100%; padding: 0.5rem 0.7rem; border: 1px solid #dbe3ee; border-radius: 7px; font-size: 0.88rem; box-sizing: border-box;
+  }
+  .modal .checkrow { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.5rem; }
   .modal .actions { display: flex; gap: 0.6rem; margin-top: 1.2rem; }
   .modal .actions button { flex: 1; padding: 0.6rem; }
   .btn-cancel { background: #e2e8f0; color: #0f172a; }
   .btn-cancel:hover { background: #cbd5e1; }
   .err { background: #fef2f2; border: 1px solid #fecaca; color: #b91c1c; border-radius: 8px; padding: 0.5rem 0.7rem; font-size: 0.82rem; margin-top: 0.8rem; display: none; }
+  #scopeRow { display: none; margin-top: 0.6rem; }
+  #scopeRow .hint { color: #64748b; font-size: 0.78rem; margin: 0 0 0.4rem; }
 </style>
 <script src="https://shekarkrishnamoorthy.com/assets/analytics.js"></script>
 <!-- HW3 custom analytics collector: static/performance/activity data -->
@@ -49,6 +55,7 @@
     <h1>User Management</h1>
     <nav>
       <a href="/index.html">&larr; Dashboard</a>
+      <a href="/reports.html">Saved Reports</a>
       <a href="#" id="logoutLink">Log out</a>
     </nav>
   </header>
@@ -56,7 +63,7 @@
   <div class="card">
     <button class="btn-primary" id="createBtn">+ New User</button>
     <table>
-      <thead><tr><th>Username</th><th>Email</th><th>Role</th><th>Created</th><th>Actions</th></tr></thead>
+      <thead><tr><th>Username</th><th>Email</th><th>Role</th><th>Sections</th><th>Created</th><th>Actions</th></tr></thead>
       <tbody id="userRows"></tbody>
     </table>
   </div>
@@ -73,9 +80,16 @@
       <input type="email" id="email" required>
       <label for="password" id="passwordLabel">Password</label>
       <input type="password" id="password">
-      <div class="checkrow">
-        <input type="checkbox" id="isAdmin">
-        <label for="isAdmin" style="margin:0">Admin access</label>
+      <label for="role">Role</label>
+      <select id="role">
+        <option value="super_admin">Super Admin — full access, manages users</option>
+        <option value="analyst" selected>Analyst — full access by default, can be scoped to sections</option>
+        <option value="viewer">Viewer — saved reports only</option>
+      </select>
+      <div id="scopeRow">
+        <p class="hint">Leave both unchecked for an unrestricted analyst (default: everything). Check one or more to restrict this analyst to only those sections.</p>
+        <div class="checkrow"><input type="checkbox" id="scopePerformance" value="performance"><label for="scopePerformance" style="margin:0">Performance</label></div>
+        <div class="checkrow"><input type="checkbox" id="scopeBehavioral" value="behavioral"><label for="scopeBehavioral" style="margin:0">Behavioral</label></div>
       </div>
       <div class="err" id="formErr"></div>
       <div class="actions">
@@ -92,14 +106,19 @@
   var API = "/api/users";
 
   function esc(s) { return String(s).replace(/</g, "&lt;"); }
+  function roleLabel(r) { return r.replace("_", " "); }
 
   function loadUsers() {
     fetch(API).then(function (r) { return r.json(); }).then(function (users) {
       document.getElementById("userRows").innerHTML = users.map(function (u) {
+        var scopeHtml = u.role === "analyst"
+          ? (u.scopes.length ? u.scopes.map(function (s) { return "<span class='scope-tag'>" + s + "</span>"; }).join("") : "<span class='scope-tag'>all</span>")
+          : "—";
         return "<tr>" +
           "<td>" + esc(u.username) + "</td>" +
           "<td>" + esc(u.email) + "</td>" +
-          "<td><span class='badge " + (u.is_admin ? "admin'>Admin" : "basic'>Basic") + "</span></td>" +
+          "<td><span class='badge " + u.role + "'>" + roleLabel(u.role) + "</span></td>" +
+          "<td>" + scopeHtml + "</td>" +
           "<td>" + new Date(u.created_at).toLocaleDateString() + "</td>" +
           "<td>" +
             "<button class='btn-edit' data-id='" + u.id + "'>Edit</button>" +
@@ -117,6 +136,11 @@
     });
   }
 
+  function updateScopeVisibility() {
+    document.getElementById("scopeRow").style.display = document.getElementById("role").value === "analyst" ? "block" : "none";
+  }
+  document.getElementById("role").addEventListener("change", updateScopeVisibility);
+
   function openModal(title) {
     document.getElementById("modalTitle").textContent = title;
     document.getElementById("formErr").style.display = "none";
@@ -126,12 +150,15 @@
     document.getElementById("modalBackdrop").classList.remove("open");
     document.getElementById("userForm").reset();
     document.getElementById("userId").value = "";
+    updateScopeVisibility();
   }
 
   function openCreate() {
     openModal("New User");
     document.getElementById("passwordLabel").textContent = "Password";
     document.getElementById("password").required = true;
+    document.getElementById("role").value = "analyst";
+    updateScopeVisibility();
   }
 
   function openEdit(id, users) {
@@ -141,9 +168,12 @@
     document.getElementById("userId").value = user.id;
     document.getElementById("username").value = user.username;
     document.getElementById("email").value = user.email;
-    document.getElementById("isAdmin").checked = !!user.is_admin;
+    document.getElementById("role").value = user.role;
+    document.getElementById("scopePerformance").checked = user.scopes.indexOf("performance") !== -1;
+    document.getElementById("scopeBehavioral").checked = user.scopes.indexOf("behavioral") !== -1;
     document.getElementById("passwordLabel").textContent = "New Password (leave blank to keep current)";
     document.getElementById("password").required = false;
+    updateScopeVisibility();
   }
 
   function deleteUser(id, username) {
@@ -160,10 +190,17 @@
   document.getElementById("userForm").addEventListener("submit", function (e) {
     e.preventDefault();
     var id = document.getElementById("userId").value;
+    var role = document.getElementById("role").value;
+    var scopes = [];
+    if (role === "analyst") {
+      if (document.getElementById("scopePerformance").checked) scopes.push("performance");
+      if (document.getElementById("scopeBehavioral").checked) scopes.push("behavioral");
+    }
     var body = {
       username: document.getElementById("username").value,
       email: document.getElementById("email").value,
-      isAdmin: document.getElementById("isAdmin").checked
+      role: role,
+      scopes: scopes
     };
     var password = document.getElementById("password").value;
     if (password) body.password = password;

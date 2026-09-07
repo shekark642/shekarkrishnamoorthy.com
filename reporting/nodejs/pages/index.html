@@ -24,6 +24,7 @@
   .card { background: #fff; border: 1px solid #dbe3ee; border-radius: 16px; padding: 1.5rem 1.75rem; }
   .card h2 { font-size: 1rem; margin: 0 0 0.9rem; }
   .card canvas { max-height: 260px; }
+  .no-access { color: #94a3b8; font-size: 0.85rem; font-style: italic; }
 
   table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
   th, td { text-align: left; padding: 0.5rem 0.6rem; border-bottom: 1px solid #eef2f7; }
@@ -45,9 +46,10 @@
   <header>
     <div>
       <h1>Analytics Dashboard</h1>
-      <p>Welcome back, <strong id="welcomeName">...</strong>.</p>
+      <p>Welcome back, <strong id="welcomeName">...</strong> (<span id="welcomeRole"></span>).</p>
     </div>
     <nav>
+      <a href="/reports.html">Saved Reports</a>
       <a href="#" id="adminLink" style="display:none">User Management</a>
       <a href="#" id="logoutLink">Log out</a>
     </nav>
@@ -57,34 +59,39 @@
 
   <div class="grid-2">
     <div class="card">
-      <h2>Metric 1: Events by Type</h2>
-      <canvas id="typeChart"></canvas>
+      <h2>Metric 1: Events by Type (behavioral)</h2>
+      <div id="typeChartWrap"><canvas id="typeChart"></canvas></div>
     </div>
     <div class="card">
-      <h2>Metric 2: Page Load Time Trend (last 20 loads)</h2>
-      <canvas id="loadTimeChart"></canvas>
+      <h2>Metric 2: Page Load Time Trend (performance, last 20 loads)</h2>
+      <div id="loadTimeChartWrap"><canvas id="loadTimeChart"></canvas></div>
     </div>
   </div>
 
   <div class="card">
-    <h2>Metric 3: Recent Activity</h2>
-    <table>
-      <thead><tr><th>Type</th><th>Session</th><th>URL</th><th>Server Time</th></tr></thead>
-      <tbody id="recentRows"></tbody>
-    </table>
+    <h2>Metric 3: Recent Activity (behavioral)</h2>
+    <div id="recentWrap">
+      <table>
+        <thead><tr><th>Type</th><th>Session</th><th>URL</th><th>Server Time</th></tr></thead>
+        <tbody id="recentRows"></tbody>
+      </table>
+    </div>
   </div>
 
   <div class="card">
-    <h2>Metric 4: Sessions</h2>
-    <p style="margin:-0.4rem 0 0.9rem;color:#64748b;font-size:0.82rem">Every session's scattered events (enter/load/activity/exit) cross-referenced into one row per visitor.</p>
-    <table>
-      <thead><tr><th>Session</th><th>First Seen</th><th>Last Seen</th><th>Duration</th><th>Pages</th><th>Submitted?</th></tr></thead>
-      <tbody id="sessionRows"></tbody>
-    </table>
+    <h2>Metric 4: Sessions (behavioral)</h2>
+    <p style="margin:-0.4rem 0 0.9rem;color:#64748b;font-size:0.82rem">Every session's scattered behavioral events (enter/activity/exit/submit_click) cross-referenced into one row per visitor.</p>
+    <div id="sessionsWrap">
+      <table>
+        <thead><tr><th>Session</th><th>First Seen</th><th>Last Seen</th><th>Duration</th><th>Pages</th><th>Submitted?</th></tr></thead>
+        <tbody id="sessionRows"></tbody>
+      </table>
+    </div>
   </div>
 
   <div class="cta-row">
     <a class="btn" href="/performance.html">Generate Detailed Report &rarr;</a>
+    <a class="btn secondary" href="/reports.html">View Saved Reports</a>
   </div>
 </main>
 
@@ -92,9 +99,27 @@
 (function () {
   "use strict";
 
+  function noAccess(containerId, section) {
+    document.getElementById(containerId).innerHTML =
+      '<p class="no-access">No access to the "' + section + '" section.</p>';
+  }
+
+  // Fetches a JSON endpoint; on 403 (no section access) calls onForbidden
+  // instead of onOk, so a restricted analyst sees a clear message per card
+  // rather than a broken chart or an empty table with no explanation.
+  function fetchScoped(url, onOk, onForbidden) {
+    fetch(url).then(function (r) {
+      if (r.status === 403) { onForbidden(); return null; }
+      return r.json();
+    }).then(function (data) {
+      if (data !== null && data !== undefined) onOk(data);
+    });
+  }
+
   fetch("/auth/me").then(function (r) { return r.json(); }).then(function (me) {
     document.getElementById("welcomeName").textContent = me.username;
-    if (me.isAdmin) {
+    document.getElementById("welcomeRole").textContent = me.role.replace("_", " ");
+    if (me.role === "super_admin") {
       var link = document.getElementById("adminLink");
       link.style.display = "inline";
       link.href = "/users.html";
@@ -116,14 +141,23 @@
     return Math.round(n * 100) / 100;
   }
 
-  // --- Metric 1: Events by Type (bar chart - categorical comparison) ---
-  fetch("/api/reports/summary?groupBy=type").then(function (r) { return r.json(); }).then(function (data) {
+  var statHtml = { performance: "", behavioral: "" };
+  function renderStats() {
+    document.getElementById("statGrid").innerHTML = statHtml.behavioral + statHtml.performance;
+  }
+
+  // --- Stats: performance half ---
+  fetchScoped("/api/performance/summary", function (data) {
     var t = data.totals;
-    document.getElementById("statGrid").innerHTML =
-      stat("Total Events", t.totalEvents) +
-      stat("Unique Sessions", t.uniqueSessions) +
-      stat("Avg Load Time", fmt(t.avgLoadTimeMs) + " ms") +
-      stat("Avg LCP", fmt(t.avgLcp) + " ms");
+    statHtml.performance = stat("Avg Load Time", fmt(t.avgLoadTimeMs) + " ms") + stat("Avg LCP", fmt(t.avgLcp) + " ms");
+    renderStats();
+  }, function () { renderStats(); });
+
+  // --- Stats + Metric 1: behavioral half (bar chart - categorical comparison) ---
+  fetchScoped("/api/behavioral/summary?groupBy=type", function (data) {
+    var t = data.totals;
+    statHtml.behavioral = stat("Total Events", t.totalEvents) + stat("Unique Sessions", t.uniqueSessions);
+    renderStats();
 
     new Chart(document.getElementById("typeChart"), {
       type: "bar",
@@ -141,15 +175,13 @@
         scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }
       }
     });
-  });
+  }, function () { renderStats(); noAccess("typeChartWrap", "behavioral"); });
 
   // --- Metric 2: Load Time Trend (line chart - values over time/sequence) ---
-  fetch("/api/events?type=load&limit=20").then(function (r) { return r.json(); }).then(function (rows) {
+  fetchScoped("/api/performance/events?limit=20", function (rows) {
     var ordered = rows.slice().reverse(); // oldest to newest, left to right
     var labels = ordered.map(function (r, i) { return "#" + (i + 1); });
-    var values = ordered.map(function (r) {
-      return r.total_load_time_ms;
-    });
+    var values = ordered.map(function (r) { return r.total_load_time_ms; });
 
     new Chart(document.getElementById("loadTimeChart"), {
       type: "line",
@@ -170,15 +202,15 @@
         scales: { y: { beginAtZero: true } }
       }
     });
-  });
+  }, function () { noAccess("loadTimeChartWrap", "performance"); });
 
   // --- Metric 3: Recent Activity (grid - individual record inspection) ---
-  fetch("/api/events?limit=15").then(function (r) { return r.json(); }).then(function (rows) {
+  fetchScoped("/api/behavioral/events?limit=15", function (rows) {
     document.getElementById("recentRows").innerHTML = rows.map(function (r) {
       return "<tr><td>" + r.type + "</td><td class='mono'>" + (r.session_id || "") + "</td>" +
         "<td class='mono'>" + (r.url || "") + "</td><td class='mono'>" + (r.server_timestamp || "") + "</td></tr>";
     }).join("");
-  });
+  }, function () { noAccess("recentWrap", "behavioral"); });
 
   // --- Metric 4: Sessions (cross-referenced - one row per session, not per event) ---
   function fmtDuration(secs) {
@@ -186,7 +218,7 @@
     if (secs < 60) return secs + "s";
     return Math.floor(secs / 60) + "m " + (secs % 60) + "s";
   }
-  fetch("/api/reports/sessions?limit=20").then(function (r) { return r.json(); }).then(function (rows) {
+  fetchScoped("/api/behavioral/sessions?limit=20", function (rows) {
     document.getElementById("sessionRows").innerHTML = rows.map(function (r) {
       return "<tr><td class='mono'>" + r.session_id.slice(0, 12) + "</td>" +
         "<td class='mono'>" + (r.firstSeen || "") + "</td>" +
@@ -195,7 +227,7 @@
         "<td>" + r.pagesVisited + "</td>" +
         "<td>" + (r.submitted ? "✅" : "—") + "</td></tr>";
     }).join("");
-  });
+  }, function () { noAccess("sessionsWrap", "behavioral"); });
 })();
 </script>
 </body>

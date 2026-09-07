@@ -49,6 +49,7 @@
     </div>
     <nav>
       <a href="/index.html">&larr; Dashboard</a>
+      <a href="/reports.html">Saved Reports</a>
       <a href="#" id="adminLink" style="display:none">User Management</a>
       <a href="#" id="logoutLink">Log out</a>
     </nav>
@@ -90,7 +91,7 @@
 
   fetch("/auth/me").then(function (r) { return r.json(); }).then(function (me) {
     document.getElementById("welcomeName").textContent = me.username;
-    if (me.isAdmin) {
+    if (me.role === "super_admin") {
       var link = document.getElementById("adminLink");
       link.style.display = "inline";
       link.href = "/users.html";
@@ -124,7 +125,7 @@
       '<span class="tag ' + s + '">' + scoreLabel(s) + '</span></div>';
   }
 
-  fetch("/api/reports/summary").then(function (r) { return r.json(); }).then(function (data) {
+  fetch("/api/performance/summary").then(function (r) { return r.json(); }).then(function (data) {
     var t = data.totals;
     document.getElementById("scoreGrid").innerHTML =
       scoreCard("Avg Load Time", t.avgLoadTimeMs, " ms", "loadTime") +
@@ -153,7 +154,7 @@
     document.getElementById("discussion").textContent = parts.join(" ");
   });
 
-  fetch("/api/events?type=load&limit=100").then(function (r) { return r.json(); }).then(function (rows) {
+  fetch("/api/performance/events?limit=100").then(function (r) { return r.json(); }).then(function (rows) {
     var times = rows.map(function (r) {
       return r.total_load_time_ms;
     }).filter(function (v) { return typeof v === "number"; });

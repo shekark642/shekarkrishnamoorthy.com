@@ -59,7 +59,7 @@
         errBox.style.display = "block";
         return;
       }
-      window.location.href = "/index.html";
+      window.location.href = res.body.role === "viewer" ? "/reports.html" : "/index.html";
     }).catch(function (err) {
       errBox.textContent = "Login failed: " + err.message;
       errBox.style.display = "block";
