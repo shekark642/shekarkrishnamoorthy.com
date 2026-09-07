@@ -14,14 +14,15 @@
   header p { margin: 0; color: #64748b; font-size: 0.85rem; }
   nav a { color: #0284c7; text-decoration: none; font-size: 0.88rem; margin-left: 1.1rem; font-weight: 600; }
 
-  .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.9rem; margin-bottom: 1.5rem; }
-  .stat { background: #fff; border: 1px solid #dbe3ee; border-radius: 12px; padding: 1rem; text-align: center; }
+  .top-row { display: grid; grid-template-columns: 260px 1fr; gap: 1.5rem; margin-bottom: 1.5rem; align-items: stretch; }
+  @media (max-width: 700px) { .top-row { grid-template-columns: 1fr; } }
+  .pie-card canvas { max-height: 210px; }
+  .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 0.9rem; }
+  .stat { background: #fff; border: 1px solid #dbe3ee; border-radius: 12px; padding: 1rem; text-align: center; display: flex; flex-direction: column; justify-content: center; }
   .stat .label { font-size: 0.72rem; color: #64748b; text-transform: uppercase; letter-spacing: 0.04em; }
-  .stat .value { font-size: 1.5rem; font-weight: 700; margin-top: 0.2rem; }
+  .stat .value { font-size: 1.7rem; font-weight: 700; margin-top: 0.3rem; }
 
-  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-bottom: 1.5rem; }
-  @media (max-width: 760px) { .grid-2 { grid-template-columns: 1fr; } }
-  .card { background: #fff; border: 1px solid #dbe3ee; border-radius: 16px; padding: 1.5rem 1.75rem; }
+  .card { background: #fff; border: 1px solid #dbe3ee; border-radius: 16px; padding: 1.5rem 1.75rem; margin-bottom: 1.5rem; }
   .card h2 { font-size: 1rem; margin: 0 0 0.9rem; }
   .card canvas { max-height: 260px; }
   .no-access { color: #94a3b8; font-size: 0.85rem; font-style: italic; }
@@ -52,21 +53,21 @@
     </nav>
   </header>
 
-  <div class="stat-grid" id="statGrid"></div>
-
-  <div class="grid-2">
-    <div class="card">
-      <h2>Metric 1: Events by Type (behavioral)</h2>
-      <div id="typeChartWrap"><canvas id="typeChart"></canvas></div>
+  <div class="top-row">
+    <div class="card pie-card">
+      <h2>Visitor Type</h2>
+      <div id="visitorTypeWrap"><canvas id="visitorTypeChart"></canvas></div>
     </div>
-    <div class="card">
-      <h2>Metric 2: Page Load Time Trend (performance, last 20 loads)</h2>
-      <div id="loadTimeChartWrap"><canvas id="loadTimeChart"></canvas></div>
-    </div>
+    <div class="stat-grid" id="statGrid"></div>
   </div>
 
   <div class="card">
-    <h2>Metric 3: Recent Activity (behavioral)</h2>
+    <h2>Page Load Time Trend (performance, last 20 loads)</h2>
+    <div id="loadTimeChartWrap"><canvas id="loadTimeChart"></canvas></div>
+  </div>
+
+  <div class="card">
+    <h2>Recent Activity (behavioral)</h2>
     <div id="recentWrap">
       <table>
         <thead><tr><th>Type</th><th>Session</th><th>URL</th><th>Server Time</th></tr></thead>
@@ -76,7 +77,7 @@
   </div>
 
   <div class="card">
-    <h2>Metric 4: Sessions (behavioral)</h2>
+    <h2>Sessions (behavioral)</h2>
     <p style="margin:-0.4rem 0 0.9rem;color:#64748b;font-size:0.82rem">Every session's scattered behavioral events (enter/activity/exit/submit_click) cross-referenced into one row per visitor.</p>
     <div id="sessionsWrap">
       <table>
@@ -84,12 +85,6 @@
         <tbody id="sessionRows"></tbody>
       </table>
     </div>
-  </div>
-
-  <div class="card">
-    <h2>Metric 5: Visitor Type (behavioral)</h2>
-    <p style="margin:-0.4rem 0 0.9rem;color:#64748b;font-size:0.82rem">One classification per session, from navigator.webdriver and User-Agent pattern matching on each visit's load event - a heuristic, not a guarantee.</p>
-    <div id="visitorTypeWrap" style="max-width:280px;margin:0 auto"><canvas id="visitorTypeChart"></canvas></div>
   </div>
 
   <div class="card" id="flaggedCard" style="display:none">
@@ -178,38 +173,22 @@
     document.getElementById("statGrid").innerHTML = statHtml.behavioral + statHtml.performance;
   }
 
-  // --- Stats: performance half ---
+  // --- Stats: performance half (just avg load time - LCP/CLS/INP live on
+  // the detailed report, this dashboard is meant to be a quick-glance one) ---
   fetchScoped("/api/performance/summary", function (data) {
     var t = data.totals;
-    statHtml.performance = stat("Avg Load Time", fmt(t.avgLoadTimeMs) + " ms") + stat("Avg LCP", fmt(t.avgLcp) + " ms");
+    statHtml.performance = stat("Avg Load Time", fmt(t.avgLoadTimeMs) + " ms");
     renderStats();
   }, function () { renderStats(); });
 
-  // --- Stats + Metric 1: behavioral half (bar chart - categorical comparison) ---
-  fetchScoped("/api/behavioral/summary?groupBy=type", function (data) {
+  // --- Stats: behavioral half ---
+  fetchScoped("/api/behavioral/summary", function (data) {
     var t = data.totals;
     statHtml.behavioral = stat("Total Events", t.totalEvents) + stat("Unique Sessions", t.uniqueSessions);
     renderStats();
+  }, function () { renderStats(); });
 
-    new Chart(document.getElementById("typeChart"), {
-      type: "bar",
-      data: {
-        labels: data.byGroup.map(function (r) { return r.key; }),
-        datasets: [{
-          label: "Events",
-          data: data.byGroup.map(function (r) { return r.count; }),
-          backgroundColor: "#0284c7"
-        }]
-      },
-      options: {
-        responsive: true,
-        plugins: { legend: { display: false } },
-        scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }
-      }
-    });
-  }, function () { renderStats(); noAccess("typeChartWrap", "behavioral"); });
-
-  // --- Metric 2: Load Time Trend (line chart - values over time/sequence) ---
+  // --- Page Load Time Trend (line chart - values over time/sequence) ---
   fetchScoped("/api/performance/events?limit=20", function (rows) {
     var ordered = rows.slice().reverse(); // oldest to newest, left to right
     var labels = ordered.map(function (r, i) { return "#" + (i + 1); });
@@ -236,7 +215,7 @@
     });
   }, function () { noAccess("loadTimeChartWrap", "performance"); });
 
-  // --- Metric 3: Recent Activity (grid - individual record inspection) ---
+  // --- Recent Activity (grid - individual record inspection) ---
   fetchScoped("/api/behavioral/events?limit=15", function (rows) {
     document.getElementById("recentRows").innerHTML = rows.map(function (r) {
       return "<tr><td>" + r.type + "</td><td class='mono'>" + (r.session_id || "") + "</td>" +
@@ -244,7 +223,7 @@
     }).join("");
   }, function () { noAccess("recentWrap", "behavioral"); });
 
-  // --- Metric 4: Sessions (cross-referenced - one row per session, not per event) ---
+  // --- Sessions (cross-referenced - one row per session, not per event) ---
   function fmtDuration(secs) {
     if (secs === null || secs === undefined) return "—";
     if (secs < 60) return secs + "s";
@@ -261,7 +240,7 @@
     }).join("");
   }, function () { noAccess("sessionsWrap", "behavioral"); });
 
-  // --- Metric 5: Visitor Type (pie chart - bot vs human, one slice each) ---
+  // --- Visitor Type (pie chart - bot vs human, one slice each) ---
   fetchScoped("/api/behavioral/visitor-types", function (data) {
     new Chart(document.getElementById("visitorTypeChart"), {
       type: "pie",
