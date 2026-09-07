@@ -1720,6 +1720,85 @@ app.get('/api/behavioral/project-click-sequence', requirePageApi('projects'), as
   }
 });
 
+// GET /api/behavioral/project-time-spent - average time spent "looking at"
+// each project, most-clicked-on-average first.
+//
+// Every project card links to an external destination (a GitHub Pages
+// site, a Colab notebook, etc.) that collector.js never runs on, so there
+// is no direct way to measure time spent on a project's own page. What IS
+// measurable: the gap from a project_click to whatever this session's next
+// recorded event is, anywhere - normally the visitor navigating back to
+// this site after visiting the project externally in the same tab. That
+// gap is a genuine, if approximate, proxy for "how long they were away
+// looking at it," built entirely from data already being collected for
+// project-click-sequence above - not a new tracking mechanism.
+//
+// A click with no later event in its session at all (the visitor never
+// came back, or this was truly the last thing recorded) has no upper
+// bound and is excluded rather than guessed at - there's no honest number
+// to report for open-ended data.
+app.get('/api/behavioral/project-time-spent', requirePageApi('projects'), async (req, res) => {
+  try {
+    const result = await withSessionCache(req, async () => {
+      const [clickRows] = await dbPool.query(
+        `SELECT session_id,
+                JSON_UNQUOTE(JSON_EXTRACT(payload, '$.projectTitle')) AS projectTitle,
+                COALESCE(client_timestamp, server_timestamp) AS ts
+         FROM events
+         WHERE type = 'project_click' AND session_id IS NOT NULL
+         ORDER BY session_id, id ASC`
+      );
+      if (!clickRows.length) return [];
+
+      const sessionIds = [...new Set(clickRows.map((r) => r.session_id))];
+      const placeholders = sessionIds.map(() => '?').join(',');
+
+      // Every event, any type, any page - not just Projects-page events -
+      // since the "next thing that happened" after a click could be
+      // anywhere on the main site once they navigate back.
+      const [allEventRows] = await dbPool.query(
+        `SELECT session_id, COALESCE(client_timestamp, server_timestamp) AS ts
+         FROM events
+         WHERE session_id IN (${placeholders})
+         ORDER BY session_id, id ASC`,
+        sessionIds
+      );
+      const timesBySession = {};
+      allEventRows.forEach((r) => {
+        (timesBySession[r.session_id] = timesBySession[r.session_id] || []).push(new Date(r.ts).getTime());
+      });
+
+      const statsByProject = {};
+      clickRows.forEach((r) => {
+        const clickMs = new Date(r.ts).getTime();
+        const sessionTimes = timesBySession[r.session_id] || [];
+        let nextMs = null;
+        for (const t of sessionTimes) {
+          if (t > clickMs && (nextMs === null || t < nextMs)) nextMs = t;
+        }
+        if (nextMs === null) return; // no bound available - exclude, don't guess
+        const secs = (nextMs - clickMs) / 1000;
+        if (secs <= 0) return;
+        const entry = statsByProject[r.projectTitle] || { sum: 0, count: 0 };
+        entry.sum += secs;
+        entry.count += 1;
+        statsByProject[r.projectTitle] = entry;
+      });
+
+      return Object.keys(statsByProject).map((projectTitle) => ({
+        projectTitle,
+        avgSecondsSpent: Math.round(statsByProject[projectTitle].sum / statsByProject[projectTitle].count),
+        sampleSize: statsByProject[projectTitle].count
+      })).sort((a, b) => b.avgSecondsSpent - a.avgSecondsSpent);
+    });
+
+    res.json(result);
+  } catch (err) {
+    console.error('[GET /api/behavioral/project-time-spent] error:', err.message);
+    res.status(500).json({ error: 'database error' });
+  }
+});
+
 // --- Saved reports ---
 //
 // A report is now a PDF someone generated (and optionally marked up) from a

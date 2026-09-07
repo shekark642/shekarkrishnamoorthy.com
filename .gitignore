@@ -9,3 +9,4 @@ hw2/c/state-c
 hw2/nodejs/node_modules/
 hw2/nodejs/analytics.jsonl
 reporting/nodejs/node_modules/
+reporting/nodejs/report-files/

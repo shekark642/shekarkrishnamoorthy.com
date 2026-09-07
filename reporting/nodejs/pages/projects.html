@@ -68,6 +68,12 @@
   </div>
 
   <div class="card">
+    <h2>Average Time Spent per Project</h2>
+    <p class="hint">Projects link out to other sites we don't track, so this isn't time on the project's own page - it's the gap from a click to whatever this visitor's next recorded action is (usually navigating back here), a proxy for how long they were away looking at it. Clicks with no later action in the same session aren't included - there's no honest upper bound for those.</p>
+    <div id="timeSpentWrap"><canvas id="timeSpentChart"></canvas></div>
+  </div>
+
+  <div class="card">
     <h2>Time on Page</h2>
     <p class="hint">How long each visit spent specifically on the Projects page, and how many of their clicks landed on something interactive.</p>
     <div class="table-wrap" id="timeOnPageWrap"><p class="empty">Loading...</p></div>
@@ -129,6 +135,44 @@
         responsive: true,
         plugins: { legend: { display: false } },
         scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }
+      }
+    });
+  });
+
+  // --- Average Time Spent per Project (bar chart) ---
+  fetch("/api/behavioral/project-time-spent").then(function (r) {
+    if (r.status === 403) { document.getElementById("timeSpentWrap").innerHTML = '<p class="no-access">No access to the "behavioral" section.</p>'; return null; }
+    return r.json();
+  }).then(function (rows) {
+    if (!rows) return;
+    if (!rows.length) {
+      document.getElementById("timeSpentWrap").innerHTML = '<p class="empty">Not enough data yet - every recorded click was the last action in its session.</p>';
+      return;
+    }
+    new Chart(document.getElementById("timeSpentChart"), {
+      type: "bar",
+      data: {
+        labels: rows.map(function (r) { return r.projectTitle; }),
+        datasets: [{
+          label: "Avg. time spent",
+          data: rows.map(function (r) { return r.avgSecondsSpent; }),
+          backgroundColor: "#f59e0b"
+        }]
+      },
+      options: {
+        responsive: true,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              label: function (ctx) {
+                var r = rows[ctx.dataIndex];
+                return fmtDuration(r.avgSecondsSpent) + " avg (n=" + r.sampleSize + ")";
+              }
+            }
+          }
+        },
+        scales: { y: { beginAtZero: true, title: { display: true, text: "seconds" } } }
       }
     });
   });
